@@ -1,0 +1,2 @@
+-keep class com.bingoq.analyzer.data.** { *; }
+-keep class com.bingoq.analyzer.domain.** { *; }
