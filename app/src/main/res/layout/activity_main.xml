@@ -5,6 +5,7 @@
     android:layout_height="match_parent"
     android:fitsSystemWindows="true"
     android:orientation="vertical">
+
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
@@ -12,21 +13,25 @@
         android:background="?attr/colorPrimary"
         app:title="台灣賓果賓果量化預測分析儀"
         app:titleTextColor="@android:color/white" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:padding="16dp">
+
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardCornerRadius="12dp"
             app:cardElevation="2dp">
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:padding="12dp">
+
                 <TextView
                     android:id="@+id/tvValidationBadge"
                     android:layout_width="match_parent"
@@ -34,6 +39,7 @@
                     android:text="驗證燈號：尚未載入資料"
                     android:textSize="15sp"
                     android:textStyle="bold" />
+
                 <TextView
                     android:id="@+id/tvStatus"
                     android:layout_width="match_parent"
@@ -41,6 +47,7 @@
                     android:layout_marginTop="4dp"
                     android:text="狀態：請點擊下方按鈕更新並交叉驗證"
                     android:textSize="13sp" />
+
                 <com.google.android.material.progressindicator.LinearProgressIndicator
                     android:id="@+id/progressBar"
                     android:layout_width="match_parent"
@@ -50,11 +57,13 @@
                     android:visibility="gone" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:orientation="horizontal">
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnUpdate"
                 android:layout_width="0dp"
@@ -62,6 +71,7 @@
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
                 android:text="一鍵更新並交叉驗證" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPredict"
                 style="@style/Widget.Material3.Button.TonalButton"
@@ -72,19 +82,39 @@
                 android:enabled="false"
                 android:text="一鍵執行預測" />
         </LinearLayout>
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnOptimize"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:enabled="false"
-            android:text="權重自動最佳化" />
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnOptimize"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="權重自動最佳化" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWeights"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:text="手動調整權重" />
+        </LinearLayout>
+
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_marginTop="12dp"
             android:layout_weight="1">
+
             <TextView
                 android:id="@+id/tvResult"
                 android:layout_width="match_parent"
