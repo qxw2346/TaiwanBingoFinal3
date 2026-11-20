@@ -1,129 +1,356 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+﻿<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
-    android:orientation="vertical">
-
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/colorPrimary"
-        app:title="台灣賓果賓果量化預測分析儀"
-        app:titleTextColor="@android:color/white" />
-
-    <LinearLayout
+    android:background="#121212">
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:padding="16dp">
-
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="2dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="12dp">
-
-                <TextView
-                    android:id="@+id/tvValidationBadge"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="驗證燈號：尚未載入資料"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvStatus"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="狀態：請點擊下方按鈕更新並交叉驗證"
-                    android:textSize="13sp" />
-
-                <com.google.android.material.progressindicator.LinearProgressIndicator
-                    android:id="@+id/progressBar"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:indeterminate="true"
-                    android:visibility="gone" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
+        android:padding="12dp">
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnUpdate"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:text="一鍵更新並交叉驗證" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPredict"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:enabled="false"
-                android:text="一鍵執行預測" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnOptimize"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:enabled="false"
-                android:text="權重自動最佳化" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnWeights"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:text="手動調整權重" />
-        </LinearLayout>
-
-        <ScrollView
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_marginTop="12dp"
-            android:layout_weight="1">
-
-            <TextView
-                android:id="@+id/tvResult"
+            android:orientation="vertical">
+            <ProgressBar
+                android:id="@+id/progressBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="4dp"
+                android:indeterminate="true"
+                android:visibility="gone"
+                android:layout_marginBottom="6dp"/>
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:lineSpacingMultiplier="1.25"
-                android:text="請先點擊「一鍵更新並交叉驗證」取得最新歷史開獎資料..."
-                android:textIsSelectable="true"
-                android:textSize="13.5sp" />
-        </ScrollView>
-    </LinearLayout>
-</LinearLayout>
+                app:cardBackgroundColor="#1E1E1E"
+                app:strokeColor="#333333"
+                app:strokeWidth="1dp"
+                app:cardCornerRadius="14dp"
+                android:layout_marginBottom="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="14dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:id="@+id/tvDrawStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="台彩賓果 9 因子分析引擎"
+                            android:textColor="#FFFFFF"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+                        <TextView
+                            android:id="@+id/tvCountdown"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="開獎倒數: 計算中..."
+                            android:textColor="#FFD700"
+                            android:textSize="13sp"
+                            android:layout_marginTop="2dp" />
+                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/tvSecurityBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="● 三源驗證"
+                        android:textColor="#52C41A"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:padding="6dp"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="#1E1E1E"
+                app:strokeColor="#333333"
+                app:strokeWidth="1dp"
+                app:cardCornerRadius="14dp"
+                android:layout_marginBottom="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="14dp"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📈 模型命中率實戰檢驗 (基準: 1.25 / 2.50 / 5.00)"
+                        android:textColor="#FFD700"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/tvHitRateStats"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="近 30 期盲測: Top5[--] Top10[--] Top20[--]"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp"
+                        android:layout_marginTop="6dp"/>
+                    <TextView
+                        android:id="@+id/tvLastHitDetail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="上期對標命中: -- 顆"
+                        android:textColor="#52C41A"
+                        android:textSize="12sp"
+                        android:layout_marginTop="4dp"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="#1E1E1E"
+                app:strokeColor="#333333"
+                app:strokeWidth="1dp"
+                app:cardCornerRadius="14dp"
+                android:layout_marginBottom="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="14dp"
+                    android:orientation="vertical">
+                    <RelativeLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="⚙️ 9 因子自訂權重 (防誤觸鎖定)"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:layout_centerVertical="true"/>
+                        <Button
+                            android:id="@+id/btnToggleLock"
+                            android:layout_width="wrap_content"
+                            android:layout_height="34dp"
+                            android:layout_alignParentEnd="true"
+                            android:text="🔒 點擊解鎖"
+                            android:textSize="11sp"
+                            style="@style/Widget.Material3.Button.TonalButton"/>
+                    </RelativeLayout>
+                    <TextView
+                        android:id="@+id/tvWeightMeta"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="狀態: 永久鎖定中 (防手滑修改)"
+                        android:textColor="#8C8C8C"
+                        android:textSize="11sp"
+                        android:layout_marginTop="2dp"
+                        android:layout_marginBottom="8dp"/>
+                    <TableLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:stretchColumns="*">
+                        <TableRow android:layout_marginBottom="4dp">
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="A 貝氏平滑" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightA" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="B 近期動能" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightB" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="C 指數衰減" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightC" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                        </TableRow>
+                        <TableRow android:layout_marginBottom="4dp">
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="D 遺漏動態" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightD" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="E 尾數熱度" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightE" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="F 區段穩定" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightF" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                        </TableRow>
+                        <TableRow android:layout_marginBottom="4dp">
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="G 馬可夫鏈" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightG" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="H 同伴共現" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightH" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                            <LinearLayout android:orientation="vertical" android:padding="2dp">
+                                <TextView android:text="I 四區輪動" android:textColor="#8C8C8C" android:textSize="10sp"/>
+                                <EditText android:id="@+id/etWeightI" android:layout_width="match_parent" android:layout_height="38dp" android:inputType="number" android:textColor="#FFFFFF" android:textAlignment="center" android:background="@drawable/bg_edit_box"/>
+                            </LinearLayout>
+                        </TableRow>
+                    </TableLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="8dp">
+                        <Button
+                            android:id="@+id/btnSaveWeights"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:text="💾 儲存套用"
+                            android:textSize="12sp"
+                            style="@style/Widget.Material3.Button"/>
+                        <Button
+                            android:id="@+id/btnResetWeights"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="4dp"
+                            android:text="🔄 恢復預設"
+                            android:textSize="12sp"
+                            style="@style/Widget.Material3.Button.TonalButton"/>
+                    </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="4dp">
+                        <Button
+                            android:id="@+id/btnOptimizeWeights"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1.2"
+                            android:layout_marginEnd="4dp"
+                            android:text="🤖 測算最佳化"
+                            android:textSize="12sp"
+                            style="@style/Widget.Material3.Button.TonalButton"/>
+                        <Button
+                            android:id="@+id/btnExportWeights"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="0.9"
+                            android:layout_marginEnd="2dp"
+                            android:text="📤 匯出"
+                            android:textSize="11sp"
+                            style="@style/Widget.Material3.Button.OutlinedButton"/>
+                        <Button
+                            android:id="@+id/btnImportWeights"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="0.9"
+                            android:layout_marginStart="2dp"
+                            android:text="📥 匯入"
+                            android:textSize="11sp"
+                            style="@style/Widget.Material3.Button.OutlinedButton"/>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="#1E1E1E"
+                app:strokeColor="#FFD700"
+                app:strokeWidth="1.5dp"
+                app:cardCornerRadius="14dp"
+                android:layout_marginBottom="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="14dp"
+                    android:orientation="vertical">
+                    <RelativeLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🎯 下期開獎精選命中名單"
+                            android:textColor="#FFD700"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                        <Button
+                            android:id="@+id/btnCopyTop"
+                            android:layout_width="wrap_content"
+                            android:layout_height="34dp"
+                            android:layout_alignParentEnd="true"
+                            android:text="複製號碼"
+                            android:textSize="11sp"
+                            style="@style/Widget.Material3.Button.TonalButton"/>
+                    </RelativeLayout>
+                    <TextView
+                        android:id="@+id/tvTop5"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="🔥 Top 5 核心: 計算中..."
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:layout_marginTop="8dp"/>
+                    <TextView
+                        android:id="@+id/tvTop10"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="⚡ Top 10 黃金: 計算中..."
+                        android:textColor="#FFA940"
+                        android:textSize="13sp"
+                        android:layout_marginTop="4dp"/>
+                    <TextView
+                        android:id="@+id/tvTop20"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="📋 Top 20 對標: 計算中..."
+                        android:textColor="#8C8C8C"
+                        android:textSize="12sp"
+                        android:layout_marginTop="4dp"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="#1E1E1E"
+                app:strokeColor="#333333"
+                app:strokeWidth="1dp"
+                app:cardCornerRadius="14dp"
+                android:layout_marginBottom="12dp">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="14dp"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🌡️ 80 號 9 因子熱度矩陣 (紅=熱 / 藍=冷)"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="8dp"/>
+                    <GridLayout
+                        android:id="@+id/gridHeatmap"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:columnCount="10"
+                        android:alignmentMode="alignMargins"
+                        android:useDefaultMargins="true"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <Button
+                android:id="@+id/btnRefreshAll"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="🔄 立即刷新開獎數據並重算"
+                android:textSize="14sp"
+                app:cornerRadius="12dp"
+                style="@style/Widget.Material3.Button"/>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

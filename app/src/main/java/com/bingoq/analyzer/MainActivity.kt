@@ -80,7 +80,7 @@ class MainActivity : AppCompatActivity() {
         binding.etWeightH.setText(w.wH.toString())
         binding.etWeightI.setText(w.wI.toString())
         val dateStr = SimpleDateFormat("MM/dd HH:mm", Locale.TAIWAN).format(Date(w.updatedAt))
-        binding.tvWeightMeta.text = "版本: v${w.version} | 模式: ${w.mode} | 總權重: ${w.totalWeight()} | 存檔: $dateStr"
+        binding.tvWeightMeta.text = "版本: v" + w.version + " | 模式: " + w.mode + " | 總權重: " + w.totalWeight() + " | 存檔: " + dateStr
     }
     private fun setUiEditingUnlocked(unlocked: Boolean) {
         isUiEditingUnlocked = unlocked
@@ -146,18 +146,18 @@ class MainActivity : AppCompatActivity() {
             currentWeights = configToSave
             populateWeightsToUI(configToSave)
             setUiEditingUnlocked(false)
-            Toast.makeText(this, "$reason 套用並儲存成功！", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, reason + " 套用並儲存成功！", Toast.LENGTH_SHORT).show()
             loadDataAndAnalyze()
             return true
         } else {
-            Toast.makeText(this, "$reason 儲存失敗，請檢查儲存空間", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, reason + " 儲存失敗，請檢查儲存空間", Toast.LENGTH_SHORT).show()
             return false
         }
     }
     private fun initCountdown() {
         countdownManager = BingoCountdownManager(
             onTick = { remMin, remSec, drawLabel ->
-                binding.tvCountdown.text = "距下期開獎 ($drawLabel) : %02d 分 %02d 秒".format(remMin, remSec)
+                binding.tvCountdown.text = "距下期開獎 (" + drawLabel + ") : " + String.format(Locale.TAIWAN, "%02d 分 %02d 秒", remMin, remSec)
             },
             onDrawTimeReached = {
                 Toast.makeText(this, "開獎時刻已到，自動同步最新開獎號碼...", Toast.LENGTH_SHORT).show()
@@ -218,7 +218,7 @@ class MainActivity : AppCompatActivity() {
                     if (res.isSuccess) {
                         applyAndSaveWeights(res.getOrThrow(), "匯入權重")
                     } else {
-                        Toast.makeText(this, "匯入失敗: ${res.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "匯入失敗: " + (res.exceptionOrNull()?.message ?: "未知錯誤"), Toast.LENGTH_LONG).show()
                     }
                 }
                 .setNegativeButton("取消", null)
@@ -246,7 +246,7 @@ class MainActivity : AppCompatActivity() {
                     if (e is CancellationException) throw e
                     withContext(Dispatchers.Main) {
                         decrementTask()
-                        Toast.makeText(this@MainActivity, "最佳化測算失敗: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "最佳化測算失敗: " + (e.message ?: "未知錯誤"), Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -257,13 +257,11 @@ class MainActivity : AppCompatActivity() {
         binding.btnCopyTop.setOnClickListener {
             currentRecommendation?.let { rec ->
                 val text = buildString {
-                    append("【台彩賓果 9 因子命中推薦 (v3.3.4)】\n")
-                    append("🔥 Top 5 核心: ${rec.top5.joinToString(", ") { "%02d".format(it) }}\n")
-                    append("⚡ Top 10 黃金: ${rec.top10.joinToString(", ") { "%02d".format(it) }}\n")
-                    append("📋 Top 20 對標: ${rec.top20.joinToString(", ") { "%02d".format(it) }}\n")
-                    append("📈 近30期盲測平均命中: Top5[%.2f/1.25] Top10[%.2f/2.50] Top20[%.2f/5.00]".format(
-                        rec.avgHitRate30.top5Avg, rec.avgHitRate30.top10Avg, rec.avgHitRate30.top20Avg
-                    ))
+                    appendLine("【台彩賓果 9 因子命中推薦 (v3.3.4)】")
+                    appendLine("🔥 Top 5 核心: " + rec.top5.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
+                    appendLine("⚡ Top 10 黃金: " + rec.top10.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
+                    appendLine("📋 Top 20 對標: " + rec.top20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
+                    append("📈 近30期盲測平均命中: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top20Avg) + "/5.00]")
                 }
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("BingoTopNumbers", text))
@@ -273,17 +271,20 @@ class MainActivity : AppCompatActivity() {
     }
     private fun showOptimizationDialog(res: OptimizationResult) {
         val msg = buildString {
-            append("【回測期數】: 總測試 ${res.totalTestPeriods} 期\n")
-            append("(訓練: ${res.trainPeriods} 期 | 驗證: ${res.valPeriods} 期 | 獨立 OOS: ${res.oosPeriods} 期)\n\n")
-            append("【原基準權重表現】:\n")
-            append("• Top 5 : %.2f 顆 (隨機基準 1.25)\n".format(res.originalTop5Hit))
-            append("• Top 10: %.2f 顆 (隨機基準 2.50)\n".format(res.originalTop10Hit))
-            append("• Top 20: %.2f 顆 (隨機基準 5.00)\n\n".format(res.originalTop20Hit))
-            append("【最佳化權重表現】:\n")
-            append("• Top 5 : %.2f 顆\n".format(res.bestTop5Hit))
-            append("• Top 10: %.2f 顆\n".format(res.bestTop10Hit))
-            append("• Top 20: %.2f 顆 (OOS獨立盲測: %.2f)\n\n".format(res.bestTop20Hit, res.oosHitRate))
-            append("推薦方案: A:${res.bestWeights.wA} B:${res.bestWeights.wB} C:${res.bestWeights.wC} D:${res.bestWeights.wD} E:${res.bestWeights.wE} F:${res.bestWeights.wF} G:${res.bestWeights.wG} H:${res.bestWeights.wH} I:${res.bestWeights.wI}")
+            appendLine("【回測期數】: 總測試 " + res.totalTestPeriods + " 期")
+            appendLine("(訓練: " + res.trainPeriods + " 期 | 驗證: " + res.valPeriods + " 期 | 獨立 OOS: " + res.oosPeriods + " 期)")
+            appendLine()
+            appendLine("【原基準權重表現】:")
+            appendLine("• Top 5 : " + String.format(Locale.TAIWAN, "%.2f", res.originalTop5Hit) + " 顆 (隨機基準 1.25)")
+            appendLine("• Top 10: " + String.format(Locale.TAIWAN, "%.2f", res.originalTop10Hit) + " 顆 (隨機基準 2.50)")
+            appendLine("• Top 20: " + String.format(Locale.TAIWAN, "%.2f", res.originalTop20Hit) + " 顆 (隨機基準 5.00)")
+            appendLine()
+            appendLine("【最佳化權重表現】:")
+            appendLine("• Top 5 : " + String.format(Locale.TAIWAN, "%.2f", res.bestTop5Hit) + " 顆")
+            appendLine("• Top 10: " + String.format(Locale.TAIWAN, "%.2f", res.bestTop10Hit) + " 顆")
+            appendLine("• Top 20: " + String.format(Locale.TAIWAN, "%.2f", res.bestTop20Hit) + " 顆 (OOS獨立盲測: " + String.format(Locale.TAIWAN, "%.2f", res.oosHitRate) + ")")
+            appendLine()
+            append("推薦方案: A:" + res.bestWeights.wA + " B:" + res.bestWeights.wB + " C:" + res.bestWeights.wC + " D:" + res.bestWeights.wD + " E:" + res.bestWeights.wE + " F:" + res.bestWeights.wF + " G:" + res.bestWeights.wG + " H:" + res.bestWeights.wH + " I:" + res.bestWeights.wI)
         }
         AlertDialog.Builder(this)
             .setTitle("🤖 歷史前向尋優結果")
@@ -292,7 +293,7 @@ class MainActivity : AppCompatActivity() {
                 if (currentWeights.version != res.baseConfigVersion || currentWeights.updatedAt != res.baseConfigUpdatedAt) {
                     AlertDialog.Builder(this)
                         .setTitle("權重版本衝突警告")
-                        .setMessage("在最佳化測算期間，您已修改過權重設定 (目前為 v${currentWeights.version})。\n若強制套用，將會覆蓋剛才的修改。是否仍要覆蓋套用？")
+                        .setMessage("在最佳化測算期間，您已修改過權重設定 (目前為 v" + currentWeights.version + ")。\n若強制套用，將會覆蓋剛才的修改。是否仍要覆蓋套用？")
                         .setPositiveButton("確認覆蓋") { _, _ ->
                             applyAndSaveWeights(res.bestWeights, "最佳化權重")
                         }
@@ -358,22 +359,20 @@ class MainActivity : AppCompatActivity() {
                         BingoDataFetcher.Status.RED -> Color.parseColor("#FF4D4F")
                     }
                 )
-                binding.tvDrawStatus.text = "台彩賓果分析 (分析窗口: ${analysisDraws.size}/1000期 | 本機庫存: ${totalStoredCount}/3000期)"
+                binding.tvDrawStatus.text = "台彩賓果分析 (分析窗口: " + analysisDraws.size + "/1000期 | 本機庫存: " + totalStoredCount + "/3000期)"
                 if (networkErrorMessage != null) {
                     Toast.makeText(this@MainActivity, networkErrorMessage, Toast.LENGTH_SHORT).show()
                 }
                 val m30 = recommendation.avgHitRate30
                 val edge20 = ((m30.top20Avg - 5.00) / 5.00) * 100.0
-                binding.tvHitRateStats.text = "近30期盲測: Top5[%.2f/1.25] Top10[%.2f/2.50] Top20[%.2f/5.00] (優勢: %+.1f%%)".format(
-                    m30.top5Avg, m30.top10Avg, m30.top20Avg, edge20
-                )
+                binding.tvHitRateStats.text = "近30期盲測: Top5[" + String.format(Locale.TAIWAN, "%.2f", m30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m30.top20Avg) + "/5.00] (優勢: " + String.format(Locale.TAIWAN, "%+.1f%%", edge20) + ")"
                 val hitDesc = if (recommendation.lastDrawHitsTop20.isNotEmpty()) {
-                    recommendation.lastDrawHitsTop20.joinToString(", ") { "%02d".format(it) }
+                    recommendation.lastDrawHitsTop20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) }
                 } else "無"
-                binding.tvLastHitDetail.text = "第 ${recommendation.lastDrawNo} 期命中 Top20: ${recommendation.lastDrawHitsTop20.size} 顆 [$hitDesc]"
-                binding.tvTop5.text = "🔥 Top 5 核心: " + recommendation.top5.joinToString(" , ") { "%02d".format(it) }
-                binding.tvTop10.text = "⚡ Top 10 黃金: " + recommendation.top10.joinToString(" , ") { "%02d".format(it) }
-                binding.tvTop20.text = "📋 Top 20 對標: " + recommendation.top20.joinToString(" , ") { "%02d".format(it) }
+                binding.tvLastHitDetail.text = "第 " + recommendation.lastDrawNo + " 期命中 Top20: " + recommendation.lastDrawHitsTop20.size + " 顆 [" + hitDesc + "]"
+                binding.tvTop5.text = "🔥 Top 5 核心: " + recommendation.top5.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
+                binding.tvTop10.text = "⚡ Top 10 黃金: " + recommendation.top10.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
+                binding.tvTop20.text = "📋 Top 20 對標: " + recommendation.top20.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
                 renderHeatmap(scores)
             }
         }
@@ -386,7 +385,7 @@ class MainActivity : AppCompatActivity() {
             val score = scores[ballNum] ?: 0.0
             val norm = if (maxScore > minScore) ((score - minScore) / (maxScore - minScore)) * 100 else 50.0
             val tv = TextView(this).apply {
-                text = "%02d".format(ballNum)
+                text = String.format(Locale.TAIWAN, "%02d", ballNum)
                 textSize = 12f
                 gravity = Gravity.CENTER
                 setTextColor(Color.WHITE)
@@ -408,7 +407,7 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener {
                     Toast.makeText(
                         this@MainActivity,
-                        "號碼: %02d | 得分: %.3f | 歸一熱度: %d%%".format(ballNum, score, norm.toInt()),
+                        "號碼: " + String.format(Locale.TAIWAN, "%02d", ballNum) + " | 得分: " + String.format(Locale.TAIWAN, "%.3f", score) + " | 歸一熱度: " + norm.toInt() + "%",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
