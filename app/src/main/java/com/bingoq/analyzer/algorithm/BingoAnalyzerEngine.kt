@@ -8,137 +8,243 @@ object BingoAnalyzerEngine {
     private const val TOTAL_BALLS = 80
     private const val EPSILON = 1e-9
     fun computeScores(history: List<BingoDraw>, weights: WeightConfig): Map<Int, Double> {
-        val finalMap = mutableMapOf<Int, Double>()
-        if (history.isEmpty()) {
-            for (i in 1..TOTAL_BALLS) finalMap[i] = 1.0
-            return finalMap
-        }
-        val totalDraws = history.size
+        val normMatrix = computeNormalizedFactorMatrix(history)
+        return scoreFromFactorMatrix(normMatrix, weights)
+    }
+    fun scoreFromFactorMatrix(normMatrix: Array<DoubleArray>, weights: WeightConfig): Map<Int, Double> {
+        val finalMap = HashMap<Int, Double>(TOTAL_BALLS)
         val wNorm = weights.normalizedWeights()
+        for (n in 1..TOTAL_BALLS) {
+            var total = 0.0
+            val row = normMatrix[n]
+            for (f in 0 until 9) {
+                total += row[f] * wNorm[f]
+            }
+            finalMap[n] = if (total.isNaN() || total.isInfinite()) 0.0 else total
+        }
+        return finalMap
+    }
+    fun computeNormalizedFactorMatrix(history: List<BingoDraw>): Array<DoubleArray> {
+        val normMatrix = Array(TOTAL_BALLS + 1) { DoubleArray(9) { 0.5 } }
+        if (history.isEmpty()) return normMatrix
+        val totalDraws = history.size
+        val w5 = minOf(5, totalDraws)
+        val w10 = minOf(10, totalDraws)
+        val w20 = minOf(20, totalDraws)
+        val w30 = minOf(30, totalDraws)
         val freqAll = IntArray(TOTAL_BALLS + 1)
-        val freqRecent5 = IntArray(TOTAL_BALLS + 1)
-        val freqRecent10 = IntArray(TOTAL_BALLS + 1)
-        val freqRecent20 = IntArray(TOTAL_BALLS + 1)
-        val freqRecent30 = IntArray(TOTAL_BALLS + 1)
+        val freq5 = IntArray(TOTAL_BALLS + 1)
+        val freq10 = IntArray(TOTAL_BALLS + 1)
+        val freq20 = IntArray(TOTAL_BALLS + 1)
+        val freq30 = IntArray(TOTAL_BALLS + 1)
         val lastSeenIndex = IntArray(TOTAL_BALLS + 1) { totalDraws }
-        for ((idx, draw) in history.withIndex()) {
+        val maxGapBucket = 25
+        val gapTrials = IntArray(maxGapBucket + 1)
+        val gapHits = IntArray(maxGapBucket + 1)
+        val drawFlags = Array(totalDraws) { BooleanArray(TOTAL_BALLS + 1) }
+        for (idx in 0 until totalDraws) {
+            val draw = history[idx]
+            val flags = drawFlags[idx]
             for (num in draw.numbers) {
                 if (num in 1..TOTAL_BALLS) {
+                    flags[num] = true
                     freqAll[num]++
-                    if (idx < 5) freqRecent5[num]++
-                    if (idx < 10) freqRecent10[num]++
-                    if (idx < 20) freqRecent20[num]++
-                    if (idx < 30) freqRecent30[num]++
+                    if (idx < 5) freq5[num]++
+                    if (idx < 10) freq10[num]++
+                    if (idx < 20) freq20[num]++
+                    if (idx < 30) freq30[num]++
                     if (lastSeenIndex[num] == totalDraws) lastSeenIndex[num] = idx
                 }
             }
         }
-        val lastDrawSet = history.first().numbers.toSet()
+        if (totalDraws >= 10) {
+            val runningLastSeen = IntArray(TOTAL_BALLS + 1) { -1 }
+            val startOldest = minOf(totalDraws - 1, 500)
+            for (idx in startOldest downTo 0) {
+                val flags = drawFlags[idx]
+                for (n in 1..TOTAL_BALLS) {
+                    val prevIdx = runningLastSeen[n]
+                    if (prevIdx != -1) {
+                        val gap = (prevIdx - idx - 1).coerceIn(0, maxGapBucket)
+                        gapTrials[gap]++
+                        if (flags[n]) gapHits[gap]++
+                    }
+                    if (flags[n]) runningLastSeen[n] = idx
+                }
+            }
+        }
         val markovMatrix = Array(TOTAL_BALLS + 1) { IntArray(TOTAL_BALLS + 1) }
         val markovRowSums = IntArray(TOTAL_BALLS + 1)
-        val markovSampleDepth = minOf(100, history.size - 1)
-        for (i in 0 until markovSampleDepth) {
-            val currDraw = history[i].numbers
-            val prevDraw = history[i + 1].numbers
-            for (p in prevDraw) {
-                for (c in currDraw) {
-                    if (p in 1..TOTAL_BALLS && c in 1..TOTAL_BALLS) {
-                        markovMatrix[p][c]++
+        val markovDepth = minOf(600, totalDraws - 1)
+        for (i in 0 until markovDepth) {
+            val currFlags = drawFlags[i]
+            val prevNums = history[i + 1].numbers
+            for (p in prevNums) {
+                if (p !in 1..TOTAL_BALLS) continue
+                val row = markovMatrix[p]
+                for (c in 1..TOTAL_BALLS) {
+                    if (currFlags[c]) {
+                        row[c]++
                         markovRowSums[p]++
                     }
                 }
             }
         }
+        val markovConfidence = minOf(1.0, markovDepth / 100.0)
         val coMatrix = Array(TOTAL_BALLS + 1) { IntArray(TOTAL_BALLS + 1) }
-        val coSampleDepth = minOf(40, history.size)
-        for (i in 0 until coSampleDepth) {
+        val coFreq = IntArray(TOTAL_BALLS + 1)
+        val coDepth = minOf(400, totalDraws)
+        for (i in 0 until coDepth) {
             val nums = history[i].numbers
             for (a in nums) {
+                if (a !in 1..TOTAL_BALLS) continue
+                coFreq[a]++
+                val row = coMatrix[a]
                 for (b in nums) {
-                    if (a in 1..TOTAL_BALLS && b in 1..TOTAL_BALLS && a != b) {
-                        coMatrix[a][b]++
+                    if (b in 1..TOTAL_BALLS && a != b) {
+                        row[b]++
                     }
                 }
             }
         }
-        val tailFreqRecent20 = DoubleArray(10)
-        for (n in 1..TOTAL_BALLS) tailFreqRecent20[n % 10] += freqRecent20[n].toDouble()
-        val segCV = DoubleArray(8)
+        val anchors = IntArray(TOTAL_BALLS)
+        var anchorCount = 0
+        val anchorThreshold = maxOf(2, (w10 * 0.3).toInt())
+        for (n in 1..TOTAL_BALLS) {
+            if (freq10[n] >= anchorThreshold) {
+                anchors[anchorCount++] = n
+            }
+        }
+        val tailAll = DoubleArray(10)
+        val tail10 = DoubleArray(10)
+        val tail30 = DoubleArray(10)
+        for (n in 1..TOTAL_BALLS) {
+            val t = n % 10
+            tailAll[t] += freqAll[n].toDouble()
+            tail10[t] += freq10[n].toDouble()
+            tail30[t] += freq30[n].toDouble()
+        }
+        val segStability = DoubleArray(8)
+        val blockCount = minOf(10, totalDraws / 5)
         for (s in 0 until 8) {
             val start = s * 10 + 1
-            val counts = (start until start + 10).map { freqRecent20[it].toDouble() }
-            val mean = counts.average()
-            val variance = counts.sumOf { (it - mean) * (it - mean) } / counts.size
-            segCV[s] = if (mean > 0) sqrt(variance) / mean else 1.0
+            if (blockCount >= 2) {
+                var sum = 0.0
+                var sumSq = 0.0
+                for (b in 0 until blockCount) {
+                    var blockHits = 0
+                    val bStart = b * 5
+                    for (k in bStart until bStart + 5) {
+                        val f = drawFlags[k]
+                        for (n in start until start + 10) {
+                            if (f[n]) blockHits++
+                        }
+                    }
+                    sum += blockHits
+                    sumSq += blockHits * blockHits
+                }
+                val mean = sum / blockCount
+                val variance = maxOf(0.0, (sumSq / blockCount) - (mean * mean))
+                val cv = if (mean > EPSILON) sqrt(variance) / mean else 1.0
+                val recentRate = (start until start + 10).sumOf { freq20[it] }.toDouble() / w20
+                val longRate = (start until start + 10).sumOf { freqAll[it] }.toDouble() / totalDraws
+                val consistency = 1.0 / (cv + 0.2)
+                segStability[s] = consistency * (0.5 + 0.5 * (recentRate / (longRate + EPSILON)).coerceIn(0.5, 1.5))
+            } else {
+                segStability[s] = 1.0
+            }
         }
-        val zoneDiff = DoubleArray(4)
+        val zoneMomentum = DoubleArray(4)
         for (z in 0 until 4) {
             val start = z * 20 + 1
-            val f5 = (start until start + 20).sumOf { freqRecent5[it] }.toDouble() / 5.0
-            val f20 = (start until start + 20).sumOf { freqRecent20[it] }.toDouble() / 20.0
-            zoneDiff[z] = f5 - f20
+            var s5 = 0.0; var s10 = 0.0; var s20 = 0.0; var s30 = 0.0; var sAll = 0.0
+            for (n in start until start + 20) {
+                s5 += freq5[n]
+                s10 += freq10[n]
+                s20 += freq20[n]
+                s30 += freq30[n]
+                sAll += freqAll[n]
+            }
+            val r5 = s5 / w5
+            val r10 = s10 / w10
+            val r20 = s20 / w20
+            val r30 = s30 / w30
+            val rAll = sAll / totalDraws
+            val shiftShort = r5 - r20
+            val shiftMid = r10 - r30
+            val baselineDev = (r20 - rAll)
+            zoneMomentum[z] = (0.4 * shiftShort + 0.4 * shiftMid - 0.2 * baselineDev)
         }
         val rawMatrix = Array(TOTAL_BALLS + 1) { DoubleArray(9) }
         val lambdaDecay = ln(2.0) / 12.0
+        val decayDepth = minOf(80, totalDraws)
+        var maxDecayPossible = 0.0
+        for (idx in 0 until decayDepth) {
+            maxDecayPossible += exp(-lambdaDecay * idx)
+        }
+        val lastDrawNums = history.first().numbers
         for (n in 1..TOTAL_BALLS) {
             rawMatrix[n][0] = (freqAll[n] + 16.0 * 0.25) / (totalDraws + 16.0)
-            rawMatrix[n][1] = 0.40 * (freqRecent5[n] / 5.0) +
-                              0.30 * (freqRecent10[n] / 10.0) +
-                              0.20 * (freqRecent20[n] / 20.0) +
-                              0.10 * (freqRecent30[n] / 30.0)
-            var decayScore = 0.0
-            for ((idx, draw) in history.take(40).withIndex()) {
-                if (n in draw.numbers) decayScore += exp(-lambdaDecay * idx)
+            rawMatrix[n][1] = 0.40 * (freq5[n].toDouble() / w5) +
+                              0.30 * (freq10[n].toDouble() / w10) +
+                              0.20 * (freq20[n].toDouble() / w20) +
+                              0.10 * (freq30[n].toDouble() / w30)
+            var decaySum = 0.0
+            for (idx in 0 until decayDepth) {
+                if (drawFlags[idx][n]) decaySum += exp(-lambdaDecay * idx)
             }
-            rawMatrix[n][2] = decayScore
-            val gap = lastSeenIndex[n]
-            rawMatrix[n][3] = when (gap) {
-                in 2..6 -> 1.5
-                in 0..1 -> 1.0
-                in 7..14 -> 0.7
-                else -> 0.4
-            }
-            rawMatrix[n][4] = tailFreqRecent20[n % 10]
-            val segIdx = (n - 1) / 10
-            rawMatrix[n][5] = 1.0 / (segCV[segIdx] + 0.1)
-            var markovProb = 0.0
-            for (lastNum in lastDrawSet) {
-                val rowTotal = markovRowSums[lastNum]
-                val transCount = markovMatrix[lastNum][n]
-                markovProb += (transCount + 1.0) / (rowTotal + TOTAL_BALLS)
-            }
-            rawMatrix[n][6] = markovProb
-            var coScore = 0.0
-            for (anchor in 1..TOTAL_BALLS) {
-                if (freqRecent10[anchor] >= 3 && anchor != n) {
-                    coScore += coMatrix[n][anchor].toDouble()
+            rawMatrix[n][2] = if (maxDecayPossible > EPSILON) decaySum / maxDecayPossible else 0.25
+            val gap = lastSeenIndex[n].coerceIn(0, maxGapBucket)
+            rawMatrix[n][3] = (gapHits[gap] + 8.0 * 0.25) / (gapTrials[gap] + 8.0)
+            val tailIdx = n % 10
+            val tailRecentRate = 0.5 * (tail10[tailIdx] / w10) + 0.5 * (tail30[tailIdx] / w30)
+            val tailLongRate = tailAll[tailIdx] / totalDraws
+            rawMatrix[n][4] = (tailRecentRate + 0.5) / (tailLongRate + 0.5)
+            rawMatrix[n][5] = segStability[(n - 1) / 10]
+            var markovSum = 0.0
+            var validLastCount = 0
+            for (p in lastDrawNums) {
+                if (p in 1..TOTAL_BALLS) {
+                    val transProb = (markovMatrix[p][n] + 1.0) / (markovRowSums[p] + TOTAL_BALLS)
+                    markovSum += transProb
+                    validLastCount++
                 }
             }
-            rawMatrix[n][7] = coScore
-            val zIdx = (n - 1) / 20
-            rawMatrix[n][8] = zoneDiff[zIdx]
+            val rawMarkov = if (validLastCount > 0) markovSum / validLastCount else 0.0125
+            rawMatrix[n][6] = markovConfidence * rawMarkov + (1.0 - markovConfidence) * 0.0125
+            var liftSum = 0.0
+            val pN = (coFreq[n] + 4.0 * 0.25) / (coDepth + 4.0)
+            for (aIdx in 0 until anchorCount) {
+                val anchor = anchors[aIdx]
+                if (anchor != n) {
+                    val pA = (coFreq[anchor] + 4.0 * 0.25) / (coDepth + 4.0)
+                    val pNA = (coMatrix[n][anchor] + 4.0 * 0.0625) / (coDepth + 4.0)
+                    liftSum += pNA / (pN * pA + EPSILON)
+                }
+            }
+            rawMatrix[n][7] = if (anchorCount > 0) liftSum / anchorCount else 1.0
+            rawMatrix[n][8] = zoneMomentum[(n - 1) / 20]
         }
-        val normMatrix = Array(TOTAL_BALLS + 1) { DoubleArray(9) }
         for (f in 0 until 9) {
             var minV = Double.MAX_VALUE
             var maxV = -Double.MAX_VALUE
             for (n in 1..TOTAL_BALLS) {
                 val v = rawMatrix[n][f]
-                if (v < minV) minV = v
-                if (v > maxV) maxV = v
+                if (!v.isNaN() && !v.isInfinite()) {
+                    if (v < minV) minV = v
+                    if (v > maxV) maxV = v
+                }
             }
             val range = maxV - minV
             for (n in 1..TOTAL_BALLS) {
-                normMatrix[n][f] = if (range > EPSILON) (rawMatrix[n][f] - minV) / range else 0.5
+                val v = rawMatrix[n][f]
+                normMatrix[n][f] = if (v.isNaN() || v.isInfinite() || range <= EPSILON) {
+                    0.5
+                } else {
+                    ((v - minV) / range).coerceIn(0.0, 1.0)
+                }
             }
         }
-        for (n in 1..TOTAL_BALLS) {
-            var total = 0.0
-            for (f in 0 until 9) {
-                total += normMatrix[n][f] * wNorm[f]
-            }
-            finalMap[n] = if (total.isNaN() || total.isInfinite()) 0.0 else total
-        }
-        return finalMap
+        return normMatrix
     }
 }

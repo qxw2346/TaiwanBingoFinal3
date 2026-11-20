@@ -1,5 +1,4 @@
-package com.bingoq.analyzer
-
+﻿package com.bingoq.analyzer
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -32,24 +31,23 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
 class MainActivity : AppCompatActivity() {
-
     companion object {
         private const val ANALYSIS_WINDOW_LIMIT = 1000
         private const val DB_RETENTION_CAP = 3000
+        private const val RECOMMENDED_MIN_SAMPLES = 100
+        private const val BACKFILL_THRESHOLD = 200
     }
-
     private lateinit var binding: ActivityMainBinding
     private lateinit var countdownManager: BingoCountdownManager
     private lateinit var weightManager: WeightManager
     private var currentWeights = WeightConfig.default()
     private var currentRecommendation: HitRateRecommendation? = null
+    private var lastNetworkStatus: BingoDataFetcher.Status = BingoDataFetcher.Status.RED
     private var isUiEditingUnlocked: Boolean = false
     private var analysisJob: Job? = null
     private var optimizationJob: Job? = null
     private var activeTasksCount: Int = 0
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -62,13 +60,11 @@ class MainActivity : AppCompatActivity() {
         initListeners()
         loadDataAndAnalyze()
     }
-
     @Synchronized
     private fun incrementTask() {
         activeTasksCount++
         binding.progressBar.visibility = View.VISIBLE
     }
-
     @Synchronized
     private fun decrementTask() {
         activeTasksCount = maxOf(0, activeTasksCount - 1)
@@ -76,7 +72,6 @@ class MainActivity : AppCompatActivity() {
             binding.progressBar.visibility = View.GONE
         }
     }
-
     private fun populateWeightsToUI(w: WeightConfig) {
         binding.etWeightA.setText(w.wA.toString())
         binding.etWeightB.setText(w.wB.toString())
@@ -90,7 +85,6 @@ class MainActivity : AppCompatActivity() {
         val dateStr = SimpleDateFormat("MM/dd HH:mm", Locale.TAIWAN).format(Date(w.updatedAt))
         binding.tvWeightMeta.text = "版本: v" + w.version + " | 模式: " + w.mode + " | 總權重: " + w.totalWeight() + " | 存檔: " + dateStr
     }
-
     private fun setUiEditingUnlocked(unlocked: Boolean) {
         isUiEditingUnlocked = unlocked
         val inputs = listOf(
@@ -105,7 +99,6 @@ class MainActivity : AppCompatActivity() {
         binding.btnSaveWeights.isEnabled = unlocked
         binding.btnToggleLock.text = if (unlocked) "🔓 鎖定編輯" else "🔒 點擊解鎖"
     }
-
     private fun readWeightsFromUI(): WeightConfig? {
         val inputs = listOf(
             binding.etWeightA, binding.etWeightB, binding.etWeightC,
@@ -142,7 +135,6 @@ class MainActivity : AppCompatActivity() {
         }
         return config
     }
-
     private fun applyAndSaveWeights(newConfig: WeightConfig, reason: String): Boolean {
         if (!newConfig.isValid()) {
             Toast.makeText(this, "權重驗證失敗：各因子需介於 0~1000 且總和大於 0", Toast.LENGTH_SHORT).show()
@@ -158,14 +150,13 @@ class MainActivity : AppCompatActivity() {
             populateWeightsToUI(configToSave)
             setUiEditingUnlocked(false)
             Toast.makeText(this, reason + " 套用並儲存成功！", Toast.LENGTH_SHORT).show()
-            loadDataAndAnalyze()
+            recomputeFromLocalCache()
             return true
         } else {
             Toast.makeText(this, reason + " 儲存失敗，請檢查儲存空間", Toast.LENGTH_SHORT).show()
             return false
         }
     }
-
     private fun initCountdown() {
         countdownManager = BingoCountdownManager(
             onTick = { remMin, remSec, drawLabel ->
@@ -177,23 +168,19 @@ class MainActivity : AppCompatActivity() {
             }
         )
     }
-
     override fun onResume() {
         super.onResume()
         countdownManager.start(lifecycleScope)
     }
-
     override fun onPause() {
         super.onPause()
         countdownManager.stop()
     }
-
     override fun onDestroy() {
         super.onDestroy()
         analysisJob?.cancel()
         optimizationJob?.cancel()
     }
-
     private fun initListeners() {
         binding.btnToggleLock.setOnClickListener {
             val nextState = !isUiEditingUnlocked
@@ -201,14 +188,12 @@ class MainActivity : AppCompatActivity() {
             val msg = if (nextState) "已解鎖，現在可修改九因子數字" else "已鎖定，防止滑動螢幕誤觸"
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
-
         binding.btnSaveWeights.setOnClickListener {
             val uiConfig = readWeightsFromUI()
             if (uiConfig != null) {
                 applyAndSaveWeights(uiConfig, "手動自訂權重")
             }
         }
-
         binding.btnResetWeights.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("恢復預設權重")
@@ -219,14 +204,12 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton("取消", null)
                 .show()
         }
-
         binding.btnExportWeights.setOnClickListener {
             val code = weightManager.exportWeights()
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("BingoWeights", code))
             Toast.makeText(this, "權重代碼已複製到剪貼簿！", Toast.LENGTH_SHORT).show()
         }
-
         binding.btnImportWeights.setOnClickListener {
             val et = EditText(this).apply { hint = "在此貼上 Base64 權重代碼" }
             AlertDialog.Builder(this)
@@ -244,7 +227,6 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton("取消", null)
                 .show()
         }
-
         binding.btnOptimizeWeights.setOnClickListener {
             if (optimizationJob?.isActive == true) {
                 Toast.makeText(this, "最佳化測算已在背景進行中，請稍候...", Toast.LENGTH_SHORT).show()
@@ -252,7 +234,6 @@ class MainActivity : AppCompatActivity() {
             }
             val baseConfigSnapshot = currentWeights.copy()
             incrementTask()
-            binding.tvDrawStatus.text = "正在進行歷史 Walk-Forward 前向尋優..."
             Toast.makeText(this, "啟動歷史前向尋優測算...", Toast.LENGTH_SHORT).show()
             optimizationJob = lifecycleScope.launch(Dispatchers.IO) {
                 try {
@@ -261,7 +242,15 @@ class MainActivity : AppCompatActivity() {
                     val optResult = weightManager.optimizeFromHistory(history, baseConfigSnapshot)
                     withContext(Dispatchers.Main) {
                         decrementTask()
-                        showOptimizationDialog(optResult)
+                        if (optResult.totalTestPeriods <= 0) {
+                            AlertDialog.Builder(this@MainActivity)
+                                .setTitle("樣本數不足")
+                                .setMessage("目前僅有 " + history.size + " 期真實開獎資料，至少需要 " + WeightManager.MIN_DRAWS_FOR_OPTIMIZATION + " 期才能執行嚴謹的前向尋優，請先連線同步最新資料。")
+                                .setPositiveButton("了解", null)
+                                .show()
+                        } else {
+                            showOptimizationDialog(optResult)
+                        }
                     }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
@@ -272,20 +261,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
         binding.btnRefreshAll.setOnClickListener {
-            Toast.makeText(this, "刷新按鈕有反應", Toast.LENGTH_SHORT).show()
             loadDataAndAnalyze()
         }
-
         binding.btnCopyTop.setOnClickListener {
             currentRecommendation?.let { rec ->
                 val text = buildString {
-                    appendLine("【台彩賓果 9 因子命中推薦 (v3.3.4)】")
+                    appendLine("【台彩賓果 9 因子命中推薦 (v3.3.7)】")
                     appendLine("🔥 Top 5 核心: " + rec.top5.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("⚡ Top 10 黃金: " + rec.top10.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("📋 Top 20 對標: " + rec.top20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
-                    append("📈 近30期盲測平均命中: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top20Avg) + "/5.00]")
+                    append("📈 近" + rec.avgHitRate30.periods + "期盲測平均命中: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top20Avg) + "/5.00]")
                 }
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("BingoTopNumbers", text))
@@ -293,7 +279,6 @@ class MainActivity : AppCompatActivity() {
             } ?: Toast.makeText(this, "運算中，請稍候...", Toast.LENGTH_SHORT).show()
         }
     }
-
     private fun showOptimizationDialog(res: OptimizationResult) {
         val msg = buildString {
             appendLine("【回測期數】: 總測試 " + res.totalTestPeriods + " 期")
@@ -331,79 +316,133 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("保留目前權重", null)
             .show()
     }
-
+    private fun recomputeFromLocalCache() {
+        analysisJob?.cancel()
+        val weightSnapshot = currentWeights.copy()
+        incrementTask()
+        analysisJob = lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val dao = BingoDatabase.getInstance(applicationContext).bingoDao()
+                val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
+                val totalStoredCount = dao.getDrawCount()
+                if (analysisDraws.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        decrementTask()
+                        loadDataAndAnalyze()
+                    }
+                    return@launch
+                }
+                val scores = BingoAnalyzerEngine.computeScores(analysisDraws, weightSnapshot)
+                val recommendation = RecommendationEngine.generate(scores, analysisDraws, weightSnapshot)
+                withContext(Dispatchers.Main) {
+                    decrementTask()
+                    updateAnalysisUI(scores, recommendation, analysisDraws.size, totalStoredCount, lastNetworkStatus, null)
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                withContext(Dispatchers.Main) {
+                    decrementTask()
+                    Toast.makeText(this@MainActivity, "計算錯誤: " + (e.message ?: "未知錯誤"), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
     private fun loadDataAndAnalyze() {
         analysisJob?.cancel()
         val weightSnapshot = currentWeights.copy()
         incrementTask()
-        binding.tvDrawStatus.text = "正在同步開獎資料..."
+        binding.tvDrawStatus.text = "正在同步真實開獎資料..."
         analysisJob = lifecycleScope.launch(Dispatchers.IO) {
-            val dao = BingoDatabase.getInstance(applicationContext).bingoDao()
-            val fetcher = BingoDataFetcher()
-            var networkStatus = BingoDataFetcher.Status.RED
-            var networkErrorMessage: String? = null
             try {
-                val result = fetcher.fetchAndVerify()
-                networkStatus = result.status
-                if (result.status != BingoDataFetcher.Status.RED && result.draws.isNotEmpty()) {
-                    dao.insertDraws(result.draws)
-                    dao.pruneOldDraws(DB_RETENTION_CAP)
-                } else if (result.status == BingoDataFetcher.Status.RED) {
-                    networkErrorMessage = "三來源資料核實異常 (RED 燈號，已拒絕寫入)"
+                val dao = BingoDatabase.getInstance(applicationContext).bingoDao()
+                val fetcher = BingoDataFetcher()
+                val existingCount = dao.getDrawCount()
+                val needBackfill = existingCount < BACKFILL_THRESHOLD
+                var networkStatus = BingoDataFetcher.Status.RED
+                var syncErrorMsg: String? = null
+                try {
+                    val result = fetcher.fetchAndVerify(fullBackfill = needBackfill)
+                    networkStatus = result.status
+                    if (result.status != BingoDataFetcher.Status.RED && result.draws.isNotEmpty()) {
+                        dao.insertDraws(result.draws)
+                        dao.pruneOldDraws(DB_RETENTION_CAP)
+                    } else if (result.status == BingoDataFetcher.Status.RED) {
+                        syncErrorMsg = "無法連線或資料來源衝突 (RED 燈號，已拒絕寫入)"
+                    }
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    networkStatus = BingoDataFetcher.Status.RED
+                    syncErrorMsg = "網路同步異常，改用本機真實快取資料"
+                }
+                lastNetworkStatus = networkStatus
+                val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
+                val totalStoredCount = dao.getDrawCount()
+                if (analysisDraws.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        decrementTask()
+                        binding.tvDrawStatus.text = "無真實開獎資料，請保持網路連線後點擊刷新"
+                        binding.tvSecurityBadge.text = "✕ 無資料"
+                        binding.tvSecurityBadge.setTextColor(Color.parseColor("#FF4D4F"))
+                        binding.tvTop5.text = "🔥 Top 5 核心: 等待同步真實開獎..."
+                        binding.tvTop10.text = "⚡ Top 10 黃金: 等待同步真實開獎..."
+                        binding.tvTop20.text = "📋 Top 20 對標: 等待同步真實開獎..."
+                        Toast.makeText(this@MainActivity, syncErrorMsg ?: "請確認手機網路已開啟", Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+                val scores = BingoAnalyzerEngine.computeScores(analysisDraws, weightSnapshot)
+                val recommendation = RecommendationEngine.generate(scores, analysisDraws, weightSnapshot)
+                withContext(Dispatchers.Main) {
+                    decrementTask()
+                    updateAnalysisUI(scores, recommendation, analysisDraws.size, totalStoredCount, networkStatus, syncErrorMsg)
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                networkStatus = BingoDataFetcher.Status.RED
-                networkErrorMessage = "網路連線失敗，已切換至本機離線模式"
-            }
-            val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
-            val totalStoredCount = dao.getDrawCount()
-            if (analysisDraws.isEmpty()) {
                 withContext(Dispatchers.Main) {
                     decrementTask()
-                    binding.tvDrawStatus.text = "本機無開獎資料，請連網同步"
-                    binding.tvSecurityBadge.text = "✕ 無資料"
-                    binding.tvSecurityBadge.setTextColor(Color.parseColor("#FF4D4F"))
-                    Toast.makeText(this@MainActivity, networkErrorMessage ?: "首次使用請先連網獲取資料", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "分析失敗: " + (e.message ?: "未知錯誤"), Toast.LENGTH_SHORT).show()
                 }
-                return@launch
-            }
-            val scores = BingoAnalyzerEngine.computeScores(analysisDraws, weightSnapshot)
-            val recommendation = RecommendationEngine.generate(scores, analysisDraws, weightSnapshot)
-            withContext(Dispatchers.Main) {
-                decrementTask()
-                currentRecommendation = recommendation
-                binding.tvSecurityBadge.text = when (networkStatus) {
-                    BingoDataFetcher.Status.GREEN -> "● 三源核實"
-                    BingoDataFetcher.Status.YELLOW -> "▲ 雙源核實 (警示)"
-                    BingoDataFetcher.Status.RED -> "✕ 單源/離線"
-                }
-                binding.tvSecurityBadge.setTextColor(
-                    when (networkStatus) {
-                        BingoDataFetcher.Status.GREEN -> Color.parseColor("#52C41A")
-                        BingoDataFetcher.Status.YELLOW -> Color.parseColor("#FFA940")
-                        BingoDataFetcher.Status.RED -> Color.parseColor("#FF4D4F")
-                    }
-                )
-                binding.tvDrawStatus.text = "台彩賓果分析 (分析窗口: " + analysisDraws.size + "/1000期 | 本機庫存: " + totalStoredCount + "/3000期)"
-                if (networkErrorMessage != null) {
-                    Toast.makeText(this@MainActivity, networkErrorMessage, Toast.LENGTH_SHORT).show()
-                }
-                val m30 = recommendation.avgHitRate30
-                val edge20 = ((m30.top20Avg - 5.00) / 5.00) * 100.0
-                binding.tvHitRateStats.text = "近30期盲測: Top5[" + String.format(Locale.TAIWAN, "%.2f", m30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m30.top20Avg) + "/5.00] (優勢: " + String.format(Locale.TAIWAN, "%+.1f%%", edge20) + ")"
-                val hitDesc = if (recommendation.lastDrawHitsTop20.isNotEmpty()) {
-                    recommendation.lastDrawHitsTop20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) }
-                } else "無"
-                binding.tvLastHitDetail.text = "第 " + recommendation.lastDrawNo + " 期命中 Top20: " + recommendation.lastDrawHitsTop20.size + " 顆 [" + hitDesc + "]"
-                binding.tvTop5.text = "🔥 Top 5 核心: " + recommendation.top5.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
-                binding.tvTop10.text = "⚡ Top 10 黃金: " + recommendation.top10.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
-                binding.tvTop20.text = "📋 Top 20 對標: " + recommendation.top20.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
-                renderHeatmap(scores)
             }
         }
     }
-
+    private fun updateAnalysisUI(
+        scores: Map<Int, Double>,
+        recommendation: HitRateRecommendation,
+        windowSize: Int,
+        totalStoredCount: Int,
+        networkStatus: BingoDataFetcher.Status,
+        syncErrorMsg: String?
+    ) {
+        currentRecommendation = recommendation
+        binding.tvSecurityBadge.text = when (networkStatus) {
+            BingoDataFetcher.Status.GREEN -> "● 三源核實"
+            BingoDataFetcher.Status.YELLOW -> "▲ 單源核實"
+            BingoDataFetcher.Status.RED -> "✕ 離線/快取"
+        }
+        binding.tvSecurityBadge.setTextColor(
+            when (networkStatus) {
+                BingoDataFetcher.Status.GREEN -> Color.parseColor("#52C41A")
+                BingoDataFetcher.Status.YELLOW -> Color.parseColor("#FFA940")
+                BingoDataFetcher.Status.RED -> Color.parseColor("#FF4D4F")
+            }
+        )
+        val sampleNotice = if (windowSize < RECOMMENDED_MIN_SAMPLES) " [樣本偏少]" else ""
+        binding.tvDrawStatus.text = "台彩賓果分析 (窗口: " + windowSize + "/1000期" + sampleNotice + " | 庫存: " + totalStoredCount + "/3000期)"
+        if (syncErrorMsg != null) {
+            Toast.makeText(this, syncErrorMsg, Toast.LENGTH_SHORT).show()
+        }
+        val m30 = recommendation.avgHitRate30
+        val edge20 = ((m30.top20Avg - 5.00) / 5.00) * 100.0
+        binding.tvHitRateStats.text = "近" + m30.periods + "期盲測: Top5[" + String.format(Locale.TAIWAN, "%.2f", m30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m30.top20Avg) + "/5.00] (優勢: " + String.format(Locale.TAIWAN, "%+.1f%%", edge20) + ")"
+        val hitDesc = if (recommendation.lastDrawHitsTop20.isNotEmpty()) {
+            recommendation.lastDrawHitsTop20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) }
+        } else "無"
+        binding.tvLastHitDetail.text = "第 " + recommendation.lastDrawNo + " 期命中 Top20: " + recommendation.lastDrawHitsTop20.size + " 顆 [" + hitDesc + "]"
+        binding.tvTop5.text = "🔥 Top 5 核心: " + recommendation.top5.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
+        binding.tvTop10.text = "⚡ Top 10 黃金: " + recommendation.top10.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
+        binding.tvTop20.text = "📋 Top 20 對標: " + recommendation.top20.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
+        renderHeatmap(scores)
+    }
     private fun renderHeatmap(scores: Map<Int, Double>) {
         binding.gridHeatmap.removeAllViews()
         val maxScore = scores.values.maxOrNull() ?: 1.0

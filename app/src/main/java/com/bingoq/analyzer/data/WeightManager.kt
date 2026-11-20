@@ -13,6 +13,7 @@ class WeightManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("bingo_weights_pref_v333", Context.MODE_PRIVATE)
     companion object {
         private const val MAX_HISTORY_SNAPSHOTS = 5
+        const val MIN_DRAWS_FOR_OPTIMIZATION = 100
     }
     fun getSavedWeights(): WeightConfig {
         val json = prefs.getString("saved_config_json", null)
@@ -42,7 +43,7 @@ class WeightManager(context: Context) {
                 arr.remove(0)
             }
             prefs.edit().putString("weight_history_list", arr.toString()).apply()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
         }
     }
     fun resetWeights(): WeightConfig {
@@ -68,7 +69,7 @@ class WeightManager(context: Context) {
         history: List<BingoDraw>,
         baseConfig: WeightConfig
     ): OptimizationResult = withContext(Dispatchers.Default) {
-        if (history.size < 25) {
+        if (history.size < MIN_DRAWS_FOR_OPTIMIZATION) {
             return@withContext OptimizationResult(
                 originalWeights = baseConfig,
                 bestWeights = baseConfig,
@@ -87,50 +88,83 @@ class WeightManager(context: Context) {
                 oosHitRate = 0.0
             )
         }
-        val totalTestPeriods = minOf(30, history.size - 10)
-        val oosPeriods = minOf(5, totalTestPeriods / 3)
-        val valPeriods = minOf(5, (totalTestPeriods - oosPeriods) / 2)
+        val totalTestPeriods = minOf(60, history.size - 40)
+        val oosPeriods = minOf(10, totalTestPeriods / 4)
+        val valPeriods = minOf(10, (totalTestPeriods - oosPeriods) / 3)
         val trainPeriods = totalTestPeriods - oosPeriods - valPeriods
-        val candidates = listOf(
-            baseConfig,
-            WeightConfig(wA = 10, wB = 22, wC = 14, wD = 6, wE = 10, wF = 8, wG = 12, wH = 10, wI = 8, mode = "OPTIMIZED"),
-            WeightConfig(wA = 18, wB = 10, wC = 8, wD = 15, wE = 8, wF = 12, wG = 10, wH = 9, wI = 10, mode = "OPTIMIZED"),
-            WeightConfig(wA = 8, wB = 12, wC = 8, wD = 6, wE = 12, wF = 8, wG = 20, wH = 18, wI = 8, mode = "OPTIMIZED"),
-            WeightConfig(wA = 14, wB = 16, wC = 12, wD = 10, wE = 12, wF = 10, wG = 8, wH = 10, wI = 8, mode = "OPTIMIZED")
-        )
-        fun evaluate(weights: WeightConfig, startT: Int, endT: Int): Triple<Double, Double, Double> {
+        val periodMatrices = Array(totalTestPeriods) { t ->
+            BingoAnalyzerEngine.computeNormalizedFactorMatrix(history.subList(t + 1, history.size))
+        }
+        val periodActuals = Array(totalTestPeriods) { t ->
+            history[t].numbers.toSet()
+        }
+        fun evaluateCached(weights: WeightConfig, startT: Int, endT: Int): Triple<Double, Double, Double> {
             var h5 = 0; var h10 = 0; var h20 = 0
             val count = endT - startT
             if (count <= 0) return Triple(1.25, 2.50, 5.00)
             for (t in startT until endT) {
-                val pastSlice = history.subList(t + 1, history.size)
-                val scores = BingoAnalyzerEngine.computeScores(pastSlice, weights)
+                val scores = BingoAnalyzerEngine.scoreFromFactorMatrix(periodMatrices[t], weights)
                 val sorted = scores.entries.sortedByDescending { it.value }.map { it.key }
-                val actual = history[t].numbers.toSet()
+                val actual = periodActuals[t]
                 h5 += sorted.take(5).count { it in actual }
                 h10 += sorted.take(10).count { it in actual }
                 h20 += sorted.take(20).count { it in actual }
             }
             return Triple(h5.toDouble() / count, h10.toDouble() / count, h20.toDouble() / count)
         }
-        var bestConfig = baseConfig
-        var bestScore = -1.0
         val trainStart = oosPeriods + valPeriods
         val trainEnd = totalTestPeriods
-        for (cand in candidates) {
-            val res = evaluate(cand, trainStart, trainEnd)
-            val composite = res.first * 4.0 + res.second * 2.0 + res.third * 1.0
-            if (composite > bestScore) {
-                bestScore = composite
+        fun compositeScore(weights: WeightConfig): Double {
+            val trainRes = evaluateCached(weights, trainStart, trainEnd)
+            val valRes = evaluateCached(weights, oosPeriods, trainStart)
+            val trainComp = trainRes.first * 4.0 + trainRes.second * 2.0 + trainRes.third
+            val valComp = valRes.first * 4.0 + valRes.second * 2.0 + valRes.third
+            return trainComp * 0.4 + valComp * 0.6
+        }
+        val seedCandidates = listOf(
+            baseConfig,
+            WeightConfig(wA = 10, wB = 22, wC = 14, wD = 6, wE = 10, wF = 8, wG = 12, wH = 10, wI = 8, mode = "OPTIMIZED"),
+            WeightConfig(wA = 18, wB = 10, wC = 8, wD = 15, wE = 8, wF = 12, wG = 10, wH = 9, wI = 10, mode = "OPTIMIZED"),
+            WeightConfig(wA = 8, wB = 12, wC = 8, wD = 6, wE = 12, wF = 8, wG = 20, wH = 18, wI = 8, mode = "OPTIMIZED"),
+            WeightConfig(wA = 14, wB = 16, wC = 12, wD = 10, wE = 12, wF = 10, wG = 8, wH = 10, wI = 8, mode = "OPTIMIZED"),
+            WeightConfig(wA = 12, wB = 12, wC = 12, wD = 10, wE = 10, wF = 12, wG = 11, wH = 11, wI = 10, mode = "OPTIMIZED")
+        )
+        var bestConfig = baseConfig
+        var bestScore = compositeScore(baseConfig)
+        for (cand in seedCandidates) {
+            val s = compositeScore(cand)
+            if (s > bestScore) {
+                bestScore = s
                 bestConfig = cand
             }
         }
-        val origPerf = evaluate(baseConfig, 0, totalTestPeriods)
-        val bestPerf = evaluate(bestConfig, 0, totalTestPeriods)
-        val oosPerf = evaluate(bestConfig, 0, oosPeriods)
+        val refinedList = mutableListOf<WeightConfig>()
+        for (delta in intArrayOf(-5, 6)) {
+            refinedList.add(bestConfig.copy(wA = (bestConfig.wA + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+            refinedList.add(bestConfig.copy(wB = (bestConfig.wB + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+            refinedList.add(bestConfig.copy(wC = (bestConfig.wC + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+            refinedList.add(bestConfig.copy(wD = (bestConfig.wD + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+            refinedList.add(bestConfig.copy(wE = (bestConfig.wE + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+            refinedList.add(bestConfig.copy(wF = (bestConfig.wF + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+            refinedList.add(bestConfig.copy(wG = (bestConfig.wG + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+            refinedList.add(bestConfig.copy(wH = (bestConfig.wH + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+            refinedList.add(bestConfig.copy(wI = (bestConfig.wI + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
+        }
+        for (cand in refinedList) {
+            if (cand.isValid()) {
+                val s = compositeScore(cand)
+                if (s > bestScore) {
+                    bestScore = s
+                    bestConfig = cand
+                }
+            }
+        }
+        val origPerf = evaluateCached(baseConfig, 0, totalTestPeriods)
+        val bestPerf = evaluateCached(bestConfig, 0, totalTestPeriods)
+        val oosPerf = evaluateCached(bestConfig, 0, oosPeriods)
         OptimizationResult(
             originalWeights = baseConfig,
-            bestWeights = bestConfig,
+            bestWeights = bestConfig.copy(mode = "OPTIMIZED"),
             baseConfigVersion = baseConfig.version,
             baseConfigUpdatedAt = baseConfig.updatedAt,
             totalTestPeriods = totalTestPeriods,
