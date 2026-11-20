@@ -1,4 +1,4 @@
-﻿package com.bingoq.analyzer
+package com.bingoq.analyzer
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var countdownManager: BingoCountdownManager
     private lateinit var weightManager: WeightManager
+    private var startupFailed: Boolean = false
     private var currentWeights = WeightConfig.default()
     private var currentRecommendation: HitRateRecommendation? = null
     private var lastNetworkStatus: BingoDataFetcher.Status = BingoDataFetcher.Status.RED
@@ -53,14 +54,16 @@ class MainActivity : AppCompatActivity() {
         try {
             binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
+            // Initialize lifecycle-dependent components before any other setup can fail.
+            initCountdown()
             weightManager = WeightManager(this)
             currentWeights = weightManager.getSavedWeights()
             populateWeightsToUI(currentWeights)
             setUiEditingUnlocked(false)
-            initCountdown()
             initListeners()
             loadDataAndAnalyze()
         } catch (error: Throwable) {
+            startupFailed = true
             android.util.Log.e("BingoStartup", "MainActivity startup failed", error)
             showStartupDiagnostic(error)
         }
@@ -212,11 +215,15 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onResume() {
         super.onResume()
-        countdownManager.start(lifecycleScope)
+        if (!startupFailed && ::countdownManager.isInitialized) {
+            countdownManager.start(lifecycleScope)
+        }
     }
     override fun onPause() {
+        if (::countdownManager.isInitialized) {
+            countdownManager.stop()
+        }
         super.onPause()
-        countdownManager.stop()
     }
     override fun onDestroy() {
         super.onDestroy()
