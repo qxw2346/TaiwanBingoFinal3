@@ -208,7 +208,7 @@ class BingoDataFetcher {
         return results.distinctBy { it.drawNo }
     }
     private fun parsePilioText(pageText: String, out: MutableList<BingoDraw>) {
-        val pattern = Regex("【期別[:：]\\s*(\\d{7,12})】([\\s\\S]*?)(?:超級獎號|【期別|$)")
+        val pattern = Regex("[【〖]期別[:：]\\s*(\\d{7,12})[】〗]([\\s\\S]*?)(?:超級獎號|[【〖]期別|$)")
         for (match in pattern.findAll(pageText)) {
             val drawNo = match.groupValues[1]
             val bodyWithoutTime = match.groupValues[2].replace(Regex("\\b\\d{1,2}:\\d{2}\\b"), " ")
