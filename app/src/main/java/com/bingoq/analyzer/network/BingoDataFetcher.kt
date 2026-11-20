@@ -1,5 +1,6 @@
 ﻿package com.bingoq.analyzer.network
 import com.bingoq.analyzer.model.BingoDraw
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -9,6 +10,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -34,9 +36,9 @@ class BingoDataFetcher {
             val defOfficial = async { fetchFromTaiwanLotteryApi(daysToFetch) }
             val defPilio = async { fetchFromPilio(pilioExtraDays) }
             val defAuzo = async { fetchFromAuzo(auzoExtraDays) }
-            val listOfficial = defOfficial.await()
-            val listPilio = defPilio.await()
-            val listAuzo = defAuzo.await()
+            val listOfficial = defOfficial.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
+            val listPilio = defPilio.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
+            val listAuzo = defAuzo.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
             val primary = when {
                 listOfficial.isNotEmpty() -> listOfficial
                 listPilio.isNotEmpty() -> listPilio
@@ -106,27 +108,29 @@ class BingoDataFetcher {
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .header("Accept", "application/json")
                 .build()
-            val resp = client.newCall(req).execute()
-            val body = resp.body?.string() ?: return false
-            if (!resp.isSuccessful || body.isBlank()) return false
-            val root = JSONObject(body)
-            val beforeCount = out.size
-            val contentObj = root.optJSONObject("content")
-            if (contentObj != null) {
-                val keys = contentObj.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    val arr = contentObj.optJSONArray(k)
-                    if (arr != null) parseBingoJsonArray(arr, out)
-                    val subObj = contentObj.optJSONObject(k)
-                    if (subObj != null) parseBingoJsonObject(subObj)?.let { out.add(it) }
+            client.newCall(req).execute().use { resp ->
+                val body = resp.body?.string() ?: return false
+                if (!resp.isSuccessful || body.isBlank()) return false
+                val root = JSONObject(body)
+                val beforeCount = out.size
+                val contentObj = root.optJSONObject("content")
+                if (contentObj != null) {
+                    val keys = contentObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        val arr = contentObj.optJSONArray(k)
+                        if (arr != null) parseBingoJsonArray(arr, out)
+                        val subObj = contentObj.optJSONObject(k)
+                        if (subObj != null) parseBingoJsonObject(subObj)?.let { out.add(it) }
+                    }
+                } else {
+                    val contentArr = root.optJSONArray("content")
+                    if (contentArr != null) parseBingoJsonArray(contentArr, out)
                 }
-            } else {
-                val contentArr = root.optJSONArray("content")
-                if (contentArr != null) parseBingoJsonArray(contentArr, out)
+                out.size > beforeCount
             }
-            out.size > beforeCount
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
             false
         }
     }
@@ -138,8 +142,10 @@ class BingoDataFetcher {
     }
     private fun parseBingoJsonObject(obj: JSONObject): BingoDraw? {
         val drawNo = obj.optString("drawTerm", "").trim()
-        if (drawNo.isEmpty()) return null
-        val time = obj.optString("dDate", obj.optString("openDate", "")).trim()
+        if (drawNo.isEmpty() || drawNo == "null") return null
+        val dDate = obj.optString("dDate", "").trim().let { if (it == "null") "" else it }
+        val openDate = obj.optString("openDate", "").trim().let { if (it == "null") "" else it }
+        val time = dDate.ifBlank { openDate }
         val nums = extractNumbers(obj, "bigShowOrder").ifEmpty { extractNumbers(obj, "openShowOrder") }
         return if (nums.size == 20) BingoDraw(drawNo, time, nums) else null
     }
@@ -155,7 +161,7 @@ class BingoDataFetcher {
             if (unique.size == 20) return unique
         }
         val str = obj.optString(key, "")
-        if (str.isNotBlank()) {
+        if (str.isNotBlank() && str != "null") {
             val unique = str.split(Regex("[,\\s]+"))
                 .mapNotNull { it.trim().toIntOrNull() }
                 .filter { it in 1..80 }
@@ -172,25 +178,32 @@ class BingoDataFetcher {
                 .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                 .timeout(8000)
                 .get()
-            parsePilioText(doc.body().text(), results)
+            parsePilioText(doc.text(), results)
             if (extraDays > 0) {
-                val dateLinks = doc.select("a[href]")
-                    .filter { Regex("\\d{4}/\\d{1,2}/\\d{1,2}").containsMatchIn(it.text()) }
-                    .map { it.absUrl("href") }
-                    .distinct()
-                    .take(extraDays)
-                for (link in dateLinks) {
+                val dateLinks = mutableListOf<String>()
+                val dateRegex = Regex("\\d{4}/\\d{1,2}/\\d{1,2}")
+                for (a in doc.select("a[href]")) {
+                    if (dateRegex.containsMatchIn(a.text())) {
+                        val absUrl = a.absUrl("href")
+                        if (absUrl.isNotEmpty() && absUrl !in dateLinks) {
+                            dateLinks.add(absUrl)
+                        }
+                    }
+                }
+                for (link in dateLinks.take(extraDays)) {
                     try {
                         val subDoc = Jsoup.connect(link)
                             .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                             .timeout(8000)
                             .get()
-                        parsePilioText(subDoc.body().text(), results)
-                    } catch (_: Exception) {
+                        parsePilioText(subDoc.text(), results)
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
                     }
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
         }
         return results.distinctBy { it.drawNo }
     }
@@ -198,8 +211,8 @@ class BingoDataFetcher {
         val pattern = Regex("【期別[:：]\\s*(\\d{7,12})】([\\s\\S]*?)(?:超級獎號|【期別|$)")
         for (match in pattern.findAll(pageText)) {
             val drawNo = match.groupValues[1]
-            val body = match.groupValues[2]
-            val nums = Regex("\\b\\d{1,2}\\b").findAll(body)
+            val bodyWithoutTime = match.groupValues[2].replace(Regex("\\b\\d{1,2}:\\d{2}\\b"), " ")
+            val nums = Regex("\\b\\d{1,2}\\b").findAll(bodyWithoutTime)
                 .mapNotNull { it.value.toIntOrNull() }
                 .filter { it in 1..80 }
                 .distinct()
@@ -219,31 +232,38 @@ class BingoDataFetcher {
                 .get()
             parseAuzoDoc(doc, results)
             if (extraDays > 0) {
-                val dateLinks = doc.select("a[href]")
-                    .filter { Regex("^\\d{2}/\\d{2}$").matches(it.text().trim()) }
-                    .map { it.absUrl("href") }
-                    .distinct()
-                    .take(extraDays)
-                for (link in dateLinks) {
+                val dateLinks = mutableListOf<String>()
+                val dateRegex = Regex("^\\d{2}/\\d{2}$")
+                for (a in doc.select("a[href]")) {
+                    if (dateRegex.matches(a.text().trim())) {
+                        val absUrl = a.absUrl("href")
+                        if (absUrl.isNotEmpty() && absUrl !in dateLinks) {
+                            dateLinks.add(absUrl)
+                        }
+                    }
+                }
+                for (link in dateLinks.take(extraDays)) {
                     try {
                         val subDoc = Jsoup.connect(link)
                             .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                             .timeout(8000)
                             .get()
                         parseAuzoDoc(subDoc, results)
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
                     }
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
         }
         return results.distinctBy { it.drawNo }
     }
-    private fun parseAuzoDoc(doc: org.jsoup.nodes.Document, out: MutableList<BingoDraw>) {
-        val rows = doc.select("tr").filter { it.select("tr").isEmpty() }
-        for (tr in rows) {
+    private fun parseAuzoDoc(doc: Document, out: MutableList<BingoDraw>) {
+        for (tr in doc.select("tr")) {
+            if (tr.select("table").size > 0) continue
             val text = tr.text()
-            val periodMatch = Regex("\\b(11\\d{7})\\b").find(text) ?: continue
+            val periodMatch = Regex("\\b(1[1-9]\\d{7})\\b").find(text) ?: continue
             val drawNo = periodMatch.groupValues[1]
             val afterPeriod = text.substring(periodMatch.range.last + 1)
             val withoutTime = afterPeriod.replace(Regex("\\b\\d{1,2}:\\d{2}\\b"), " ")
