@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        showPreviousCrashIfAny()
         weightManager = WeightManager(this)
         currentWeights = weightManager.getSavedWeights()
         populateWeightsToUI(currentWeights)
@@ -61,6 +62,22 @@ class MainActivity : AppCompatActivity() {
         initCountdown()
         initListeners()
         loadDataAndAnalyze()
+    }
+
+    private fun showPreviousCrashIfAny() {
+        val prefs = getSharedPreferences("bingo_crash_diagnostics", MODE_PRIVATE)
+        val report = prefs.getString("last_crash_report", null) ?: return
+        prefs.edit().remove("last_crash_report").apply()
+        AlertDialog.Builder(this)
+            .setTitle("上次啟動失敗紀錄")
+            .setMessage(report.take(12000))
+            .setPositiveButton("複製錯誤紀錄") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Bingo crash report", report))
+                Toast.makeText(this, "錯誤紀錄已複製，請貼回對話", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("關閉", null)
+            .show()
     }
 
     @Synchronized
