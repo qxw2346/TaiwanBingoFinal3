@@ -426,7 +426,7 @@ class MainActivity : AppCompatActivity() {
                     currentRecommendation = recommendation
                     binding.tvSecurityBadge.text = when (networkStatus) {
                         BingoDataFetcher.Status.GREEN -> "● 三源核實"
-                        BingoDataFetcher.Status.YELLOW -> "▲ 雙源核實 (警示)"
+                        BingoDataFetcher.Status.YELLOW -> "▲ 已取得資料（單站來源）"
                         BingoDataFetcher.Status.RED -> "✕ 單源/離線"
                     }
                     binding.tvSecurityBadge.setTextColor(
