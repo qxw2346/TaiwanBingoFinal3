@@ -50,15 +50,57 @@ class MainActivity : AppCompatActivity() {
     private var activeTasksCount: Int = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        weightManager = WeightManager(this)
-        currentWeights = weightManager.getSavedWeights()
-        populateWeightsToUI(currentWeights)
-        setUiEditingUnlocked(false)
-        initCountdown()
-        initListeners()
-        loadDataAndAnalyze()
+        try {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+            weightManager = WeightManager(this)
+            currentWeights = weightManager.getSavedWeights()
+            populateWeightsToUI(currentWeights)
+            setUiEditingUnlocked(false)
+            initCountdown()
+            initListeners()
+            loadDataAndAnalyze()
+        } catch (error: Throwable) {
+            android.util.Log.e("BingoStartup", "MainActivity startup failed", error)
+            showStartupDiagnostic(error)
+        }
+    }
+
+    private fun showStartupDiagnostic(error: Throwable) {
+        val details = android.util.Log.getStackTraceString(error)
+        val scroll = android.widget.ScrollView(this)
+        val panel = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(32, 48, 32, 32)
+            setBackgroundColor(Color.rgb(18, 18, 18))
+        }
+        panel.addView(TextView(this).apply {
+            text = "APP 啟動診斷"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+        })
+        panel.addView(TextView(this).apply {
+            text = "啟動時發生錯誤。請按「複製錯誤內容」，將文字貼回對話。"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            setPadding(0, 20, 0, 20)
+        })
+        panel.addView(android.widget.Button(this).apply {
+            text = "複製錯誤內容"
+            setOnClickListener {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Bingo startup error", details))
+                Toast.makeText(this@MainActivity, "錯誤內容已複製，請貼回對話", Toast.LENGTH_LONG).show()
+            }
+        })
+        panel.addView(TextView(this).apply {
+            text = details
+            textSize = 11f
+            setTextColor(Color.LTGRAY)
+            setPadding(0, 20, 0, 0)
+        })
+        scroll.addView(panel)
+        setContentView(scroll)
     }
     @Synchronized
     private fun incrementTask() {
