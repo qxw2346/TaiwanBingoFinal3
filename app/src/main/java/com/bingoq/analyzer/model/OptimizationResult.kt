@@ -1,0 +1,21 @@
+﻿package com.bingoq.analyzer.model
+data class OptimizationResult(
+    val originalWeights: WeightConfig,
+    val bestWeights: WeightConfig,
+    val baseConfigVersion: Int,
+    val baseConfigUpdatedAt: Long,
+    val totalTestPeriods: Int,
+    val trainPeriods: Int,
+    val valPeriods: Int,
+    val oosPeriods: Int,
+    val originalTop5Hit: Double,
+    val originalTop10Hit: Double,
+    val originalTop20Hit: Double,
+    val bestTop5Hit: Double,
+    val bestTop10Hit: Double,
+    val bestTop20Hit: Double,
+    val oosHitRate: Double,
+    val randomBaselineTop5: Double = 1.25,
+    val randomBaselineTop10: Double = 2.50,
+    val randomBaselineTop20: Double = 5.00
+)
