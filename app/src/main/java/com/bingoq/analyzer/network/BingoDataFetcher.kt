@@ -1,93 +1,83 @@
-﻿package com.bingoq.analyzer.network
+package com.bingoq.analyzer.network
+
 import com.bingoq.analyzer.model.BingoDraw
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
 import org.jsoup.Jsoup
 import java.util.concurrent.TimeUnit
+
 class BingoDataFetcher {
-    enum class Status {
-        GREEN, YELLOW, RED
-    }
-    data class FetchResult(
-        val status: Status,
-        val draws: List<BingoDraw>
-    )
+    enum class Status { GREEN, YELLOW, RED }
+
+    data class FetchResult(val status: Status, val draws: List<BingoDraw>)
+
     private val client = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
         .build()
+
     suspend fun fetchAndVerify(): FetchResult = withContext(Dispatchers.IO) {
-        val list1 = fetchSourceOfficial()
-        val list2 = fetchSourceAuto()
-        if (list1.isNotEmpty() && list2.isNotEmpty()) {
-            val draw1 = list1.first()
-            val matchInList2 = list2.find { it.drawNo == draw1.drawNo }
-            if (matchInList2 != null && matchInList2.numbers.toSet() == draw1.numbers.toSet()) {
-                return@withContext FetchResult(Status.GREEN, list1)
-            }
-            return@withContext FetchResult(Status.YELLOW, list1)
+        // The previous TLLotto/ShowBingoResult URL was an obsolete/incomplete
+        // endpoint (it returned no usable "content" payload). Read the visible
+        // draw rows from the two published Bingo result pages instead.
+        val today = fetchPage("https://www.pilio.idv.tw/bingobingo/list.asp?auto=1")
+        val history = fetchPage("https://www.pilio.idv.tw/bingo/list_history.asp")
+        val merged = (today + history)
+            .filter { it.drawNo.isNotBlank() && it.numbers.size == 20 }
+            .distinctBy { it.drawNo }
+            .sortedByDescending { it.drawNo }
+            .take(1000)
+
+        when {
+            merged.isEmpty() -> FetchResult(Status.RED, emptyList())
+            else -> FetchResult(Status.YELLOW, merged)
         }
-        if (list1.isNotEmpty()) {
-            return@withContext FetchResult(Status.YELLOW, list1)
-        }
-        if (list2.isNotEmpty()) {
-            return@withContext FetchResult(Status.YELLOW, list2)
-        }
-        FetchResult(Status.RED, emptyList())
     }
-    private fun fetchSourceOfficial(): List<BingoDraw> {
+
+    private fun fetchPage(url: String): List<BingoDraw> {
         return try {
-            val url = "https://api.taiwanlottery.com/TLLotto/ShowBingoResult?period="
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return emptyList()
-            val result = mutableListOf<BingoDraw>()
-            val json = JSONObject(body)
-            if (json.has("content")) {
-                val arr = json.getJSONArray("content")
-                for (i in 0 until arr.length()) {
-                    val item = arr.getJSONObject(i)
-                    val drawNo = item.optString("drawTerm")
-                    val time = item.optString("dDate")
-                    val numsStr = item.optString("openShowOrder")
-                    val nums = numsStr.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it in 1..80 }
-                    if (nums.size == 20) {
-                        result.add(BingoDraw(drawNo, time, nums))
-                    }
-                }
-            }
-            result
-        } catch (e: Exception) {
+            val doc = Jsoup.connect(url)
+                .userAgent("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+                .header("Accept-Language", "zh-TW,zh;q=0.9,en;q=0.8")
+                .timeout(15000)
+                .ignoreHttpErrors(true)
+                .get()
+
+            val bodyText = doc.body()?.text().orEmpty()
+            parseDraws(bodyText)
+        } catch (_: Exception) {
             emptyList()
         }
     }
-    private fun fetchSourceAuto(): List<BingoDraw> {
-        return try {
-            val url = "https://www.pilio.idv.tw/bingobingo/list.asp"
-            val doc = Jsoup.connect(url).timeout(6000).get()
-            val rows = doc.select("table tr")
-            val list = mutableListOf<BingoDraw>()
-            for (tr in rows) {
-                val text = tr.text()
-                if (text.contains("期") && text.contains(",")) {
-                    val elements = tr.select("td")
-                    if (elements.size >= 2) {
-                        val drawNo = elements[0].text().replace(Regex("[^0-9]"), "")
-                        val nums = elements[1].text().split(Regex("[,\\s]+"))
-                            .mapNotNull { it.trim().toIntOrNull() }
-                            .filter { it in 1..80 }
-                        if (drawNo.isNotEmpty() && nums.size == 20) {
-                            list.add(BingoDraw(drawNo, "", nums))
-                        }
-                    }
-                }
+
+    // Parse the page's visible text rather than assuming a fixed table-column
+    // layout. The old parser incorrectly assumed drawNo was td[0] and all
+    // twenty balls were in td[1], which is not guaranteed by the site markup.
+    private fun parseDraws(text: String): List<BingoDraw> {
+        val periodRegex = Regex("期別\\s*[:：]?\\s*(\\d{8,9})")
+        val matches = periodRegex.findAll(text).toList()
+        val draws = mutableListOf<BingoDraw>()
+
+        for (index in matches.indices) {
+            val match = matches[index]
+            val end = if (index + 1 < matches.size) matches[index + 1].range.first else text.length
+            val segment = text.substring(match.range.last + 1, end)
+
+            val numbers = Regex("(?<!\\d)\\d{1,2}(?!\\d)")
+                .findAll(segment)
+                .mapNotNull { it.value.toIntOrNull() }
+                .filter { it in 1..80 }
+                .take(20)
+                .toList()
+
+            if (numbers.size == 20 && numbers.toSet().size == 20) {
+                val time = Regex("\\b([01]?\\d|2[0-3]):[0-5]\\d\\b")
+                    .find(segment)?.value.orEmpty()
+                draws.add(BingoDraw(match.groupValues[1], time, numbers))
             }
-            list
-        } catch (e: Exception) {
-            emptyList()
         }
+        return draws.distinctBy { it.drawNo }
     }
 }
