@@ -1,4 +1,5 @@
-﻿package com.bingoq.analyzer
+package com.bingoq.analyzer
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -31,11 +32,14 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
 class MainActivity : AppCompatActivity() {
+
     companion object {
         private const val ANALYSIS_WINDOW_LIMIT = 1000
         private const val DB_RETENTION_CAP = 3000
     }
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var countdownManager: BingoCountdownManager
     private lateinit var weightManager: WeightManager
@@ -45,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private var analysisJob: Job? = null
     private var optimizationJob: Job? = null
     private var activeTasksCount: Int = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -57,11 +62,13 @@ class MainActivity : AppCompatActivity() {
         initListeners()
         loadDataAndAnalyze()
     }
+
     @Synchronized
     private fun incrementTask() {
         activeTasksCount++
         binding.progressBar.visibility = View.VISIBLE
     }
+
     @Synchronized
     private fun decrementTask() {
         activeTasksCount = maxOf(0, activeTasksCount - 1)
@@ -69,6 +76,7 @@ class MainActivity : AppCompatActivity() {
             binding.progressBar.visibility = View.GONE
         }
     }
+
     private fun populateWeightsToUI(w: WeightConfig) {
         binding.etWeightA.setText(w.wA.toString())
         binding.etWeightB.setText(w.wB.toString())
@@ -82,6 +90,7 @@ class MainActivity : AppCompatActivity() {
         val dateStr = SimpleDateFormat("MM/dd HH:mm", Locale.TAIWAN).format(Date(w.updatedAt))
         binding.tvWeightMeta.text = "版本: v" + w.version + " | 模式: " + w.mode + " | 總權重: " + w.totalWeight() + " | 存檔: " + dateStr
     }
+
     private fun setUiEditingUnlocked(unlocked: Boolean) {
         isUiEditingUnlocked = unlocked
         val inputs = listOf(
@@ -96,6 +105,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnSaveWeights.isEnabled = unlocked
         binding.btnToggleLock.text = if (unlocked) "🔓 鎖定編輯" else "🔒 點擊解鎖"
     }
+
     private fun readWeightsFromUI(): WeightConfig? {
         val inputs = listOf(
             binding.etWeightA, binding.etWeightB, binding.etWeightC,
@@ -132,6 +142,7 @@ class MainActivity : AppCompatActivity() {
         }
         return config
     }
+
     private fun applyAndSaveWeights(newConfig: WeightConfig, reason: String): Boolean {
         if (!newConfig.isValid()) {
             Toast.makeText(this, "權重驗證失敗：各因子需介於 0~1000 且總和大於 0", Toast.LENGTH_SHORT).show()
@@ -154,6 +165,7 @@ class MainActivity : AppCompatActivity() {
             return false
         }
     }
+
     private fun initCountdown() {
         countdownManager = BingoCountdownManager(
             onTick = { remMin, remSec, drawLabel ->
@@ -165,19 +177,23 @@ class MainActivity : AppCompatActivity() {
             }
         )
     }
+
     override fun onResume() {
         super.onResume()
         countdownManager.start(lifecycleScope)
     }
+
     override fun onPause() {
         super.onPause()
         countdownManager.stop()
     }
+
     override fun onDestroy() {
         super.onDestroy()
         analysisJob?.cancel()
         optimizationJob?.cancel()
     }
+
     private fun initListeners() {
         binding.btnToggleLock.setOnClickListener {
             val nextState = !isUiEditingUnlocked
@@ -185,12 +201,14 @@ class MainActivity : AppCompatActivity() {
             val msg = if (nextState) "已解鎖，現在可修改九因子數字" else "已鎖定，防止滑動螢幕誤觸"
             Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
         }
+
         binding.btnSaveWeights.setOnClickListener {
             val uiConfig = readWeightsFromUI()
             if (uiConfig != null) {
                 applyAndSaveWeights(uiConfig, "手動自訂權重")
             }
         }
+
         binding.btnResetWeights.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("恢復預設權重")
@@ -201,12 +219,14 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton("取消", null)
                 .show()
         }
+
         binding.btnExportWeights.setOnClickListener {
             val code = weightManager.exportWeights()
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("BingoWeights", code))
             Toast.makeText(this, "權重代碼已複製到剪貼簿！", Toast.LENGTH_SHORT).show()
         }
+
         binding.btnImportWeights.setOnClickListener {
             val et = EditText(this).apply { hint = "在此貼上 Base64 權重代碼" }
             AlertDialog.Builder(this)
@@ -224,6 +244,7 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton("取消", null)
                 .show()
         }
+
         binding.btnOptimizeWeights.setOnClickListener {
             if (optimizationJob?.isActive == true) {
                 Toast.makeText(this, "最佳化測算已在背景進行中，請稍候...", Toast.LENGTH_SHORT).show()
@@ -251,9 +272,12 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
         binding.btnRefreshAll.setOnClickListener {
+            Toast.makeText(this, "刷新按鈕有反應", Toast.LENGTH_SHORT).show()
             loadDataAndAnalyze()
         }
+
         binding.btnCopyTop.setOnClickListener {
             currentRecommendation?.let { rec ->
                 val text = buildString {
@@ -269,6 +293,7 @@ class MainActivity : AppCompatActivity() {
             } ?: Toast.makeText(this, "運算中，請稍候...", Toast.LENGTH_SHORT).show()
         }
     }
+
     private fun showOptimizationDialog(res: OptimizationResult) {
         val msg = buildString {
             appendLine("【回測期數】: 總測試 " + res.totalTestPeriods + " 期")
@@ -306,6 +331,7 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("保留目前權重", null)
             .show()
     }
+
     private fun loadDataAndAnalyze() {
         analysisJob?.cancel()
         val weightSnapshot = currentWeights.copy()
@@ -377,6 +403,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
     private fun renderHeatmap(scores: Map<Int, Double>) {
         binding.gridHeatmap.removeAllViews()
         val maxScore = scores.values.maxOrNull() ?: 1.0
