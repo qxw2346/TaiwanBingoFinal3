@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        showPreviousCrashIfAny()
         weightManager = WeightManager(this)
         currentWeights = weightManager.getSavedWeights()
         populateWeightsToUI(currentWeights)
@@ -61,6 +62,22 @@ class MainActivity : AppCompatActivity() {
         initCountdown()
         initListeners()
         loadDataAndAnalyze()
+    }
+
+    private fun showPreviousCrashIfAny() {
+        val prefs = getSharedPreferences("bingo_crash_diagnostics", MODE_PRIVATE)
+        val report = prefs.getString("last_crash_report", null) ?: return
+        prefs.edit().remove("last_crash_report").apply()
+        AlertDialog.Builder(this)
+            .setTitle("上次啟動失敗紀錄")
+            .setMessage(report.take(12000))
+            .setPositiveButton("複製錯誤紀錄") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Bingo crash report", report))
+                Toast.makeText(this, "錯誤紀錄已複製，請貼回對話", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("關閉", null)
+            .show()
     }
 
     @Synchronized
@@ -338,68 +355,87 @@ class MainActivity : AppCompatActivity() {
         incrementTask()
         binding.tvDrawStatus.text = "正在同步開獎資料..."
         analysisJob = lifecycleScope.launch(Dispatchers.IO) {
-            val dao = BingoDatabase.getInstance(applicationContext).bingoDao()
-            val fetcher = BingoDataFetcher()
-            var networkStatus = BingoDataFetcher.Status.RED
-            var networkErrorMessage: String? = null
             try {
-                val result = fetcher.fetchAndVerify()
-                networkStatus = result.status
-                if (result.status != BingoDataFetcher.Status.RED && result.draws.isNotEmpty()) {
-                    dao.insertDraws(result.draws)
-                    dao.pruneOldDraws(DB_RETENTION_CAP)
-                } else if (result.status == BingoDataFetcher.Status.RED) {
-                    networkErrorMessage = "三來源資料核實異常 (RED 燈號，已拒絕寫入)"
+                // Database initialization and every DAO operation are guarded as well:
+                // a Room/SQLite startup error must not crash the whole Activity.
+                val dao = BingoDatabase.getInstance(applicationContext).bingoDao()
+                val fetcher = BingoDataFetcher()
+                var networkStatus = BingoDataFetcher.Status.RED
+                var networkErrorMessage: String? = null
+
+                try {
+                    val result = fetcher.fetchAndVerify()
+                    networkStatus = result.status
+                    if (result.status != BingoDataFetcher.Status.RED && result.draws.isNotEmpty()) {
+                        dao.insertDraws(result.draws)
+                        dao.pruneOldDraws(DB_RETENTION_CAP)
+                    } else if (result.status == BingoDataFetcher.Status.RED) {
+                        networkErrorMessage = "三來源資料核實異常 (RED 燈號，已拒絕寫入)"
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    networkStatus = BingoDataFetcher.Status.RED
+                    networkErrorMessage = "網路連線失敗，已切換至本機離線模式"
                 }
+
+                val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
+                val totalStoredCount = dao.getDrawCount()
+                if (analysisDraws.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        binding.tvDrawStatus.text = "本機無開獎資料，請連網同步"
+                        binding.tvSecurityBadge.text = "✕ 無資料"
+                        binding.tvSecurityBadge.setTextColor(Color.parseColor("#FF4D4F"))
+                        Toast.makeText(this@MainActivity, networkErrorMessage ?: "首次使用請先連網獲取資料", Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+
+                val scores = BingoAnalyzerEngine.computeScores(analysisDraws, weightSnapshot)
+                val recommendation = RecommendationEngine.generate(scores, analysisDraws, weightSnapshot)
+                withContext(Dispatchers.Main) {
+                    currentRecommendation = recommendation
+                    binding.tvSecurityBadge.text = when (networkStatus) {
+                        BingoDataFetcher.Status.GREEN -> "● 三源核實"
+                        BingoDataFetcher.Status.YELLOW -> "▲ 雙源核實 (警示)"
+                        BingoDataFetcher.Status.RED -> "✕ 單源/離線"
+                    }
+                    binding.tvSecurityBadge.setTextColor(
+                        when (networkStatus) {
+                            BingoDataFetcher.Status.GREEN -> Color.parseColor("#52C41A")
+                            BingoDataFetcher.Status.YELLOW -> Color.parseColor("#FFA940")
+                            BingoDataFetcher.Status.RED -> Color.parseColor("#FF4D4F")
+                        }
+                    )
+                    binding.tvDrawStatus.text = "台彩賓果分析 (分析窗口: " + analysisDraws.size + "/1000期 | 本機庫存: " + totalStoredCount + "/3000期)"
+                    if (networkErrorMessage != null) {
+                        Toast.makeText(this@MainActivity, networkErrorMessage, Toast.LENGTH_SHORT).show()
+                    }
+                    val m30 = recommendation.avgHitRate30
+                    val edge20 = ((m30.top20Avg - 5.00) / 5.00) * 100.0
+                    binding.tvHitRateStats.text = "近30期盲測: Top5[" + String.format(Locale.TAIWAN, "%.2f", m30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m30.top20Avg) + "/5.00] (優勢: " + String.format(Locale.TAIWAN, "%+.1f%%", edge20) + ")"
+                    val hitDesc = if (recommendation.lastDrawHitsTop20.isNotEmpty()) {
+                        recommendation.lastDrawHitsTop20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) }
+                    } else "無"
+                    binding.tvLastHitDetail.text = "第 " + recommendation.lastDrawNo + " 期命中 Top20: " + recommendation.lastDrawHitsTop20.size + " 顆 [" + hitDesc + "]"
+                    binding.tvTop5.text = "🔥 Top 5 核心: " + recommendation.top5.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
+                    binding.tvTop10.text = "⚡ Top 10 黃金: " + recommendation.top10.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
+                    binding.tvTop20.text = "📋 Top 20 對標: " + recommendation.top20.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
+                    renderHeatmap(scores)
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                networkStatus = BingoDataFetcher.Status.RED
-                networkErrorMessage = "網路連線失敗，已切換至本機離線模式"
-            }
-            val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
-            val totalStoredCount = dao.getDrawCount()
-            if (analysisDraws.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    binding.tvDrawStatus.text = "啟動/資料處理失敗，請按「重新整理」重試"
+                    binding.tvSecurityBadge.text = "✕ 本機資料錯誤"
+                    binding.tvSecurityBadge.setTextColor(Color.parseColor("#FF4D4F"))
+                    Toast.makeText(this@MainActivity, "資料庫或分析程序發生錯誤: " + (e.message ?: e.javaClass.simpleName), Toast.LENGTH_LONG).show()
+                }
+            } finally {
                 withContext(Dispatchers.Main) {
                     decrementTask()
-                    binding.tvDrawStatus.text = "本機無開獎資料，請連網同步"
-                    binding.tvSecurityBadge.text = "✕ 無資料"
-                    binding.tvSecurityBadge.setTextColor(Color.parseColor("#FF4D4F"))
-                    Toast.makeText(this@MainActivity, networkErrorMessage ?: "首次使用請先連網獲取資料", Toast.LENGTH_LONG).show()
                 }
-                return@launch
-            }
-            val scores = BingoAnalyzerEngine.computeScores(analysisDraws, weightSnapshot)
-            val recommendation = RecommendationEngine.generate(scores, analysisDraws, weightSnapshot)
-            withContext(Dispatchers.Main) {
-                decrementTask()
-                currentRecommendation = recommendation
-                binding.tvSecurityBadge.text = when (networkStatus) {
-                    BingoDataFetcher.Status.GREEN -> "● 三源核實"
-                    BingoDataFetcher.Status.YELLOW -> "▲ 雙源核實 (警示)"
-                    BingoDataFetcher.Status.RED -> "✕ 單源/離線"
-                }
-                binding.tvSecurityBadge.setTextColor(
-                    when (networkStatus) {
-                        BingoDataFetcher.Status.GREEN -> Color.parseColor("#52C41A")
-                        BingoDataFetcher.Status.YELLOW -> Color.parseColor("#FFA940")
-                        BingoDataFetcher.Status.RED -> Color.parseColor("#FF4D4F")
-                    }
-                )
-                binding.tvDrawStatus.text = "台彩賓果分析 (分析窗口: " + analysisDraws.size + "/1000期 | 本機庫存: " + totalStoredCount + "/3000期)"
-                if (networkErrorMessage != null) {
-                    Toast.makeText(this@MainActivity, networkErrorMessage, Toast.LENGTH_SHORT).show()
-                }
-                val m30 = recommendation.avgHitRate30
-                val edge20 = ((m30.top20Avg - 5.00) / 5.00) * 100.0
-                binding.tvHitRateStats.text = "近30期盲測: Top5[" + String.format(Locale.TAIWAN, "%.2f", m30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m30.top20Avg) + "/5.00] (優勢: " + String.format(Locale.TAIWAN, "%+.1f%%", edge20) + ")"
-                val hitDesc = if (recommendation.lastDrawHitsTop20.isNotEmpty()) {
-                    recommendation.lastDrawHitsTop20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) }
-                } else "無"
-                binding.tvLastHitDetail.text = "第 " + recommendation.lastDrawNo + " 期命中 Top20: " + recommendation.lastDrawHitsTop20.size + " 顆 [" + hitDesc + "]"
-                binding.tvTop5.text = "🔥 Top 5 核心: " + recommendation.top5.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
-                binding.tvTop10.text = "⚡ Top 10 黃金: " + recommendation.top10.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
-                binding.tvTop20.text = "📋 Top 20 對標: " + recommendation.top20.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
-                renderHeatmap(scores)
             }
         }
     }
