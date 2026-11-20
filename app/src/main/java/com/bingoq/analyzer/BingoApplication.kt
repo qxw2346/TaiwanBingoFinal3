@@ -1,9 +1,6 @@
 package com.bingoq.analyzer
 
 import android.app.Application
-import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import java.io.File
 
 class BingoApplication : Application() {
@@ -20,20 +17,10 @@ class BingoApplication : Application() {
                     append(android.util.Log.getStackTraceString(error))
                 }
                 File(filesDir, "last_crash.txt").writeText(report)
-                Handler(Looper.getMainLooper()).post {
-                    try {
-                        startActivity(Intent(this, CrashReportActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                        })
-                    } catch (_: Throwable) {
-                        // Crash report remains saved in app-private storage.
-                    }
-                }
             } catch (_: Throwable) {
-                // Never let crash reporting cause a second crash.
+                // Preserve the original exception handling if report writing fails.
             }
-            // Do not delegate: Android's default handler would immediately kill the process
-            // before the report screen can be displayed.
+            previous?.uncaughtException(thread, error)
         }
     }
 }
