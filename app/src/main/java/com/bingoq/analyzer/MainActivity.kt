@@ -329,6 +329,10 @@ class MainActivity : AppCompatActivity() {
             currentRecommendation?.let { rec ->
                 val text = buildString {
                     appendLine("【台彩賓果 9 因子命中推薦 (v3.3.7)】")
+                    val cutoff = rec.lastDrawNo
+                    val target = cutoff.toLongOrNull()?.plus(1L)?.toString() ?: "未知"
+                    appendLine("預測目標期：" + target + " 期")
+                    appendLine("參考截止期：" + cutoff + " 期")
                     appendLine("🔥 Top 5 核心: " + rec.top5.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("⚡ Top 10 黃金: " + rec.top10.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("📋 Top 20 對標: " + rec.top20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
@@ -425,9 +429,11 @@ class MainActivity : AppCompatActivity() {
                 val needBackfill = existingCount < BACKFILL_THRESHOLD
                 var networkStatus = BingoDataFetcher.Status.RED
                 var syncErrorMsg: String? = null
+                var sourceSummary = "資料來源：尚未取得"
                 try {
                     val result = fetcher.fetchAndVerify(fullBackfill = needBackfill)
                     networkStatus = result.status
+                    sourceSummary = result.sourceSummary
                     if (result.status != BingoDataFetcher.Status.RED && result.draws.isNotEmpty()) {
                         dao.insertDraws(result.draws)
                         dao.pruneOldDraws(DB_RETENTION_CAP)
@@ -438,6 +444,7 @@ class MainActivity : AppCompatActivity() {
                     if (e is CancellationException) throw e
                     networkStatus = BingoDataFetcher.Status.RED
                     syncErrorMsg = "網路同步異常，改用本機真實快取資料"
+                    sourceSummary = "資料來源：連線失敗；目前僅使用本機快取，不代表最新資料已核實"
                 }
                 lastNetworkStatus = networkStatus
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
@@ -446,6 +453,8 @@ class MainActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         decrementTask()
                         binding.tvDrawStatus.text = "無真實開獎資料，請保持網路連線後點擊刷新"
+                        binding.tvSourceSummary.text = sourceSummary
+                        binding.tvPredictionPeriod.text = "預測目標期：尚無可核實資料"
                         binding.tvSecurityBadge.text = "✕ 無資料"
                         binding.tvSecurityBadge.setTextColor(Color.parseColor("#FF4D4F"))
                         binding.tvTop5.text = "🔥 Top 5 核心: 等待同步真實開獎..."
@@ -459,7 +468,7 @@ class MainActivity : AppCompatActivity() {
                 val recommendation = RecommendationEngine.generate(scores, analysisDraws, weightSnapshot)
                 withContext(Dispatchers.Main) {
                     decrementTask()
-                    updateAnalysisUI(scores, recommendation, analysisDraws.size, totalStoredCount, networkStatus, syncErrorMsg)
+                    updateAnalysisUI(scores, recommendation, analysisDraws.size, totalStoredCount, networkStatus, syncErrorMsg, sourceSummary)
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -476,14 +485,21 @@ class MainActivity : AppCompatActivity() {
         windowSize: Int,
         totalStoredCount: Int,
         networkStatus: BingoDataFetcher.Status,
-        syncErrorMsg: String?
+        syncErrorMsg: String?,
+        sourceSummary: String
     ) {
         currentRecommendation = recommendation
         // Lock exactly one immutable prediction for the next sequential period.
         // Refreshes or later weight edits cannot overwrite an existing target period.
+        val cutoff = recommendation.lastDrawNo
+        val target = cutoff.toLongOrNull()?.plus(1L)?.toString()
+        binding.tvPredictionPeriod.text = if (target != null) {
+            "預測目標期：" + target + " 期｜參考截止：" + cutoff + " 期"
+        } else {
+            "預測目標期：無法由最新期號推算"
+        }
+        binding.tvSourceSummary.text = sourceSummary
         if (networkStatus != BingoDataFetcher.Status.RED) {
-            val cutoff = recommendation.lastDrawNo
-            val target = cutoff.toLongOrNull()?.plus(1L)?.toString()
             if (target != null) {
                 PredictionAuditStore(applicationContext).recordPrediction(
                     targetPeriod = target,
@@ -500,8 +516,8 @@ class MainActivity : AppCompatActivity() {
         }
         updateAuditStatus()
         binding.tvSecurityBadge.text = when (networkStatus) {
-            BingoDataFetcher.Status.GREEN -> "● 三源核實"
-            BingoDataFetcher.Status.YELLOW -> "▲ 單源核實"
+            BingoDataFetcher.Status.GREEN -> "● 多源一致"
+            BingoDataFetcher.Status.YELLOW -> "▲ 尚未達雙源核實"
             BingoDataFetcher.Status.RED -> "✕ 離線/快取"
         }
         binding.tvSecurityBadge.setTextColor(
