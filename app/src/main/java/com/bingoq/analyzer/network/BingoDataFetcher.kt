@@ -46,7 +46,7 @@ class BingoDataFetcher {
             )
             val primary = sources.firstOrNull { it.second.isNotEmpty() }?.second.orEmpty()
             if (primary.isEmpty()) {
-                return@coroutineScope FetchResult(Status.RED, emptyList(), "五個來源均未取得有效資料")
+                return@coroutineScope FetchResult(Status.RED, emptyList(), "三個保留來源均未取得有效資料")
             }
             val recentDraws = primary.take(5)
             var latestVerified = false
