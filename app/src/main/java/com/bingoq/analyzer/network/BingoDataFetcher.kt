@@ -108,6 +108,13 @@ class BingoDataFetcher {
                     if (!pageOk) break
                     daySuccess = true
                 }
+            } else if (days > 1) {
+                // During historical backfill, retrieve the next official API page too.
+                // A single 210-row page can omit several hours of 5-minute draws.
+                tryFetchOfficialUrl(
+                    "https://api.taiwanlottery.com/TLCAPIWeB/Lottery/BingoResult?openDate=" + dateStr + "&pageNum=2&pageSize=210",
+                    results
+                )
             }
             if (dayOffset == 0) {
                 tryFetchOfficialUrl("https://api.taiwanlottery.com/TLCAPIWeB/Lottery/LatestBingoResult", results)
