@@ -337,7 +337,8 @@ class MainActivity : AppCompatActivity() {
                     appendLine("🔥 Top 5 核心: " + rec.top5.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("⚡ Top 10 黃金: " + rec.top10.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("📋 Top 20 對標: " + rec.top20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
-                    append("📈 近" + rec.avgHitRate30.periods + "期盲測平均命中: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top20Avg) + "/5.00]")
+                    appendLine("近30期歷史回溯平均（非未來保證）: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top20Avg) + "/5.00]")
+                    append("近" + rec.avgHitRate200.periods + "期歷史回溯平均: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top20Avg) + "/5.00]；尚未證實預測優勢")
                 }
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("BingoTopNumbers", text))
@@ -353,12 +354,17 @@ class MainActivity : AppCompatActivity() {
             appendLine("【原基準權重表現】:")
             appendLine("• Top 5 : " + String.format(Locale.TAIWAN, "%.2f", res.originalTop5Hit) + " 顆 (隨機基準 1.25)")
             appendLine("• Top 10: " + String.format(Locale.TAIWAN, "%.2f", res.originalTop10Hit) + " 顆 (隨機基準 2.50)")
-            appendLine("• Top 20: " + String.format(Locale.TAIWAN, "%.2f", res.originalTop20Hit) + " 顆 (隨機基準 5.00)")
+            appendLine("• Top 20: " + String.format(Locale.TAIWAN, "%.2f", res.originalTop20Hit) + " 顆 (訓練+驗證集；隨機基準 5.00)")
             appendLine()
             appendLine("【最佳化權重表現】:")
             appendLine("• Top 5 : " + String.format(Locale.TAIWAN, "%.2f", res.bestTop5Hit) + " 顆")
             appendLine("• Top 10: " + String.format(Locale.TAIWAN, "%.2f", res.bestTop10Hit) + " 顆")
-            appendLine("• Top 20: " + String.format(Locale.TAIWAN, "%.2f", res.bestTop20Hit) + " 顆 (OOS獨立盲測: " + String.format(Locale.TAIWAN, "%.2f", res.oosHitRate) + ")")
+            appendLine("• Top 20: " + String.format(Locale.TAIWAN, "%.2f", res.bestTop20Hit) + " 顆 (訓練+驗證集；不是最終盲測)")
+            appendLine()
+            appendLine("【最新獨立 OOS 盲測比較】")
+            appendLine("原權重 Top5/10/20: " + String.format(Locale.TAIWAN, "%.2f / %.2f / %.2f", res.originalOosTop5Hit, res.originalOosTop10Hit, res.originalOosTop20Hit))
+            appendLine("新權重 Top5/10/20: " + String.format(Locale.TAIWAN, "%.2f / %.2f / %.2f", res.bestOosTop5Hit, res.bestOosTop10Hit, res.bestOosTop20Hit))
+            appendLine("OOS期數: " + res.oosPeriods + "；隨機基準: 1.25 / 2.50 / 5.00")
             appendLine()
             append("推薦方案: A:" + res.bestWeights.wA + " B:" + res.bestWeights.wB + " C:" + res.bestWeights.wC + " D:" + res.bestWeights.wD + " E:" + res.bestWeights.wE + " F:" + res.bestWeights.wF + " G:" + res.bestWeights.wG + " H:" + res.bestWeights.wH + " I:" + res.bestWeights.wI)
         }
@@ -535,8 +541,23 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, syncErrorMsg, Toast.LENGTH_SHORT).show()
         }
         val m30 = recommendation.avgHitRate30
-        val edge20 = ((m30.top20Avg - 5.00) / 5.00) * 100.0
-        binding.tvHitRateStats.text = "近" + m30.periods + "期盲測: Top5[" + String.format(Locale.TAIWAN, "%.2f", m30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m30.top20Avg) + "/5.00] (優勢: " + String.format(Locale.TAIWAN, "%+.1f%%", edge20) + ")"
+        val m200 = recommendation.avgHitRate200
+        // Hypergeometric null SD for selecting 20 from 80 when 20 are drawn.
+        val nullSdTop20 = kotlin.math.sqrt(20.0 * 0.25 * 0.75 * 60.0 / 79.0)
+        val z200 = if (m200.periods > 0) {
+            (m200.top20Avg - 5.0) / (nullSdTop20 / kotlin.math.sqrt(m200.periods.toDouble()))
+        } else 0.0
+        val verdict = when {
+            m200.periods < 100 -> "樣本不足（至少100期才作初步判讀）"
+            kotlin.math.abs(z200) < 1.96 -> "未達常用統計門檻；無足夠證據證明優於隨機"
+            z200 > 1.96 -> "高於隨機基準的訊號；仍須另一批獨立資料重複驗證"
+            else -> "低於隨機基準；需持續觀察並檢查資料"
+        }
+        binding.tvHitRateStats.text =
+            "近30期歷史回溯平均: Top5[" + String.format(Locale.TAIWAN, "%.2f", m30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m30.top20Avg) + "/5.00]" +
+            "\n近" + m200.periods + "期歷史回溯平均: Top5[" + String.format(Locale.TAIWAN, "%.2f", m200.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m200.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m200.top20Avg) + "/5.00]" +
+            "\nTop20 隨機基準 Z值: " + String.format(Locale.TAIWAN, "%.2f", z200) + "｜" + verdict +
+            "\n※歷史回溯不代表未來命中；Z值為簡化隨機基準比較，期數相依及多重測試可能使其偏樂觀。"
         val hitDesc = if (recommendation.lastDrawHitsTop20.isNotEmpty()) {
             recommendation.lastDrawHitsTop20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) }
         } else "無"
