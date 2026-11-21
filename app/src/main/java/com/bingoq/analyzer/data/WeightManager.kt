@@ -106,7 +106,7 @@ class WeightManager(context: Context) {
             if (count <= 0) return Triple(1.25, 2.50, 5.00)
             for (t in startT until endT) {
                 val scores = BingoAnalyzerEngine.scoreFromFactorMatrix(periodMatrices[t], weights)
-                val sorted = scores.entries.sortedByDescending { it.value }.map { it.key }
+                val sorted = scores.entries.sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key }).map { it.key }
                 val actual = periodActuals[t]
                 h5 += sorted.take(5).count { it in actual }
                 h10 += sorted.take(10).count { it in actual }
