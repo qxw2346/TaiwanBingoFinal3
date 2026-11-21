@@ -15,6 +15,8 @@ object RecommendationEngine {
         val top20 = pool.take(20).sorted()
         var lastNo = "--"
         var lastActual = emptyList<Int>()
+        // These hit lists must come from a prediction made BEFORE the target draw.
+        // They are populated by the walk-forward loop below, never by today's ranking.
         var hit5 = emptyList<Int>()
         var hit10 = emptyList<Int>()
         var hit20 = emptyList<Int>()
@@ -22,10 +24,6 @@ object RecommendationEngine {
             val latest = history.first()
             lastNo = latest.drawNo
             lastActual = latest.numbers.sorted()
-            val actualSet = latest.numbers.toSet()
-            hit5 = top5.filter { it in actualSet }
-            hit10 = top10.filter { it in actualSet }
-            hit20 = top20.filter { it in actualSet }
         }
         val maxPeriods = minOf(50, history.size - 1)
         var sum5 = 0
@@ -40,9 +38,17 @@ object RecommendationEngine {
                 val periodScores = BingoAnalyzerEngine.computeScores(pastSlice, weights)
                 val periodSorted = periodScores.entries.sortedByDescending { it.value }.map { it.key }
                 val actual = history[t].numbers.toSet()
-                sum5 += periodSorted.take(5).count { it in actual }
-                sum10 += periodSorted.take(10).count { it in actual }
-                sum20 += periodSorted.take(20).count { it in actual }
+                val periodHits5 = periodSorted.take(5).filter { it in actual }
+                val periodHits10 = periodSorted.take(10).filter { it in actual }
+                val periodHits20 = periodSorted.take(20).filter { it in actual }
+                sum5 += periodHits5.size
+                sum10 += periodHits10.size
+                sum20 += periodHits20.size
+                if (t == 0) {
+                    hit5 = periodHits5
+                    hit10 = periodHits10
+                    hit20 = periodHits20
+                }
                 val count = t + 1
                 val snapshot = HitRateRecommendation.HitMetrics(
                     top5Avg = sum5.toDouble() / count,
