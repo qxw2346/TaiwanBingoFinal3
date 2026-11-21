@@ -225,16 +225,31 @@ object BingoAnalyzerEngine {
             val rawMarkov = if (validLastCount > 0) markovSum / validLastCount else 0.0125
             rawMatrix[n][6] = markovConfidence * rawMarkov + (1.0 - markovConfidence) * 0.0125
             var liftSum = 0.0
+            var eligibleAnchorCount = 0
             val pN = (coFreq[n] + 4.0 * 0.25) / (coDepth + 4.0)
+            // In a 20-of-80 draw without replacement, two distinct numbers
+            // have joint probability (20/80)*(19/79), not 0.25*0.25.
+            val nullJointProbability = (20.0 / 80.0) * (19.0 / 79.0)
             for (aIdx in 0 until anchorCount) {
                 val anchor = anchors[aIdx]
                 if (anchor != n) {
+                    eligibleAnchorCount++
                     val pA = (coFreq[anchor] + 4.0 * 0.25) / (coDepth + 4.0)
-                    val pNA = (coMatrix[n][anchor] + 4.0 * 0.0625) / (coDepth + 4.0)
-                    liftSum += pNA / (pN * pA + EPSILON)
+                    val pNA = (coMatrix[n][anchor] + 4.0 * nullJointProbability) / (coDepth + 4.0)
+                    // Correct the independence denominator for fixed-size sampling.
+                    val expectedJoint = pN * pA * (19.0 / 20.0)
+                    val lift = pNA / (expectedJoint + EPSILON)
+                    // Limit sparse-history extremes before cross-number ranking.
+                    liftSum += lift.coerceIn(0.25, 4.0)
                 }
             }
-            rawMatrix[n][7] = if (anchorCount > 0) liftSum / anchorCount else 1.0
+            // Do not divide by anchorCount when the candidate itself is an anchor:
+            // self-pairs are excluded from the numerator and denominator alike.
+            rawMatrix[n][7] = if (eligibleAnchorCount > 0) {
+                liftSum / eligibleAnchorCount
+            } else {
+                1.0
+            }
             rawMatrix[n][8] = zoneMomentum[(n - 1) / 20]
         }
         // Robust percentile ranks replace min-max scaling: a single extreme value

@@ -39,4 +39,41 @@ class BingoAnalyzerTest {
         assertEquals(20, rec.top20.size)
         assertTrue(rec.avgHitRate30.periods in 1..30)
     }
+    @Test
+    fun testFactorMatrixIsFiniteAndBoundedForBalancedSyntheticHistory() {
+        // Deterministic 20-of-80 draws; coprime step keeps 20 unique values per draw.
+        val history = (0 until 420).map { index ->
+            val numbers = (0 until 20).map { offset ->
+                ((index * 7 + offset * 13) % 80) + 1
+            }
+            BingoDraw(
+                drawNo = String.format("115%06d", 420 - index),
+                drawTime = "2026-11-21",
+                numbers = numbers
+            )
+        }
+        val matrix = BingoAnalyzerEngine.computeNormalizedFactorMatrix(history)
+        assertEquals(81, matrix.size)
+        for (number in 1..80) {
+            assertEquals(9, matrix[number].size)
+            for (factor in 0 until 9) {
+                val value = matrix[number][factor]
+                assertFalse("factor contains NaN", value.isNaN())
+                assertFalse("factor contains infinity", value.isInfinite())
+                assertTrue("normalized factor outside [0,1]", value in 0.0..1.0)
+            }
+        }
+    }
+    @Test
+    fun testEqualScoresUseStableAscendingNumberTieBreak() {
+        val tiedScores = (1..80).associateWith { 0.5 }
+        val recommendation = RecommendationEngine.generate(
+            scores = tiedScores,
+            history = emptyList(),
+            weights = WeightConfig.default()
+        )
+        assertEquals((1..5).toList(), recommendation.top5)
+        assertEquals((1..10).toList(), recommendation.top10)
+        assertEquals((1..20).toList(), recommendation.top20)
+    }
 }

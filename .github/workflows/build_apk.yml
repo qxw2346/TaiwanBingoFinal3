@@ -2,7 +2,15 @@ name: Build Android Debug APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
+      - safety/in-place-upgrade-no-data-wipe
+      - optimization/hit-rate-v1
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -24,13 +32,16 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Run Unit Tests
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: app-debug.apk
+          name: app-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           archive: false
           if-no-files-found: error
