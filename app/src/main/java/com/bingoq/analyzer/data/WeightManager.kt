@@ -89,8 +89,10 @@ class WeightManager(context: Context) {
             )
         }
         val totalTestPeriods = minOf(60, history.size - 40)
-        val oosPeriods = minOf(10, totalTestPeriods / 4)
-        val valPeriods = minOf(10, (totalTestPeriods - oosPeriods) / 3)
+        // Reserve a larger, untouched recent holdout so weight search cannot tune against it.
+        // With 60 test periods this yields 30 train / 15 validation / 15 OOS periods.
+        val oosPeriods = minOf(15, maxOf(5, totalTestPeriods / 4))
+        val valPeriods = minOf(15, (totalTestPeriods - oosPeriods) / 3)
         val trainPeriods = totalTestPeriods - oosPeriods - valPeriods
         val periodMatrices = Array(totalTestPeriods) { t ->
             BingoAnalyzerEngine.computeNormalizedFactorMatrix(history.subList(t + 1, history.size))
