@@ -1,4 +1,4 @@
-﻿package com.bingoq.analyzer.network
+package com.bingoq.analyzer.network
 import com.bingoq.analyzer.model.BingoDraw
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -32,23 +32,16 @@ class BingoDataFetcher {
     suspend fun fetchAndVerify(fullBackfill: Boolean = false): FetchResult = withContext(Dispatchers.IO) {
         coroutineScope {
             val daysToFetch = if (fullBackfill) 5 else 1
-            val pilioExtraDays = if (fullBackfill) 4 else 0
-            val auzoExtraDays = if (fullBackfill) 2 else 0
             val defOfficial = async { fetchFromTaiwanLotteryApi(daysToFetch) }
-            val defPilio = async { fetchFromPilio(pilioExtraDays) }
-            val defAuzo = async { fetchFromAuzo(auzoExtraDays) }
-            val defJyb = async { fetchFromJyb() }
+            val defAuzo = async { fetchFromAuzo(daysToFetch) }
             val defTimetable = async { fetchFromTimetable() }
             val listOfficial = defOfficial.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
-            val listPilio = defPilio.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
             val listAuzo = defAuzo.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
-            val listJyb = defJyb.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
             val listTimetable = defTimetable.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
+            // Auzo daily pages are multiple date slices from ONE provider, not independent sources.
             val sources = listOf(
                 "台彩官方 API" to listOfficial,
-                "Pilio" to listPilio,
-                "Auzo" to listAuzo,
-                "JYB" to listJyb,
+                "Auzo 歷史頁面" to listAuzo,
                 "賓果歷史查詢" to listTimetable
             )
             val primary = sources.firstOrNull { it.second.isNotEmpty() }?.second.orEmpty()
@@ -192,9 +185,6 @@ class BingoDataFetcher {
         }
         return emptyList()
     }
-    private fun fetchFromJyb(): List<BingoDraw> =
-        fetchHtmlDraws("https://jyb.one/", "JYB")
-
     private fun fetchFromTimetable(): List<BingoDraw> =
         fetchHtmlDraws("https://lottery.timetable.tw/bin-guo-bin-guo", "Timetable")
 
@@ -220,9 +210,7 @@ class BingoDataFetcher {
                     .distinct()
                     .take(20)
                     .toList()
-                if (numbers.size == 20) {
-                    results.add(BingoDraw(match.groupValues[1], "", numbers))
-                }
+                if (numbers.size == 20) results.add(BingoDraw(match.groupValues[1], "", numbers))
             }
             results.distinctBy { it.drawNo }
         } catch (e: Exception) {
@@ -231,112 +219,51 @@ class BingoDataFetcher {
         }
     }
 
-    private fun fetchFromPilio(extraDays: Int): List<BingoDraw> {
+    /**
+     * Fetch Auzo's date-addressed historical pages, e.g.
+     * https://lotto.auzonet.com/bingobingo/list_20261121.html
+     * The pages are date slices from the same provider and must count as ONE source.
+     */
+    private fun fetchFromAuzo(days: Int): List<BingoDraw> {
         val results = mutableListOf<BingoDraw>()
-        try {
-            val baseUrl = "https://www.pilio.idv.tw/bingobingo/list.asp"
-            val doc = Jsoup.connect(baseUrl)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                .timeout(8000)
-                .get()
-            parsePilioText(doc.text(), results)
-            if (extraDays > 0) {
-                val dateLinks = mutableListOf<String>()
-                val dateRegex = Regex("\\d{4}/\\d{1,2}/\\d{1,2}")
-                for (a in doc.select("a[href]")) {
-                    if (dateRegex.containsMatchIn(a.text())) {
-                        val absUrl = a.absUrl("href")
-                        if (absUrl.isNotEmpty() && absUrl !in dateLinks) {
-                            dateLinks.add(absUrl)
-                        }
-                    }
-                }
-                for (link in dateLinks.take(extraDays)) {
-                    try {
-                        val subDoc = Jsoup.connect(link)
-                            .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                            .timeout(8000)
-                            .get()
-                        parsePilioText(subDoc.text(), results)
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                    }
-                }
+        val tz = TimeZone.getTimeZone("Asia/Taipei")
+        val calendar = Calendar.getInstance(tz)
+        val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.US).apply { timeZone = tz }
+        for (offset in 0 until days.coerceAtLeast(1)) {
+            val datePart = dateFormat.format(calendar.time)
+            val url = "https://lotto.auzonet.com/bingobingo/list_" + datePart + ".html"
+            try {
+                val doc = Jsoup.connect(url)
+                    .userAgent("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+                    .timeout(15000)
+                    .get()
+                parseAuzoHistoricalDoc(doc, results)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
             }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
+            calendar.add(Calendar.DAY_OF_MONTH, -1)
         }
         return results.distinctBy { it.drawNo }
     }
-    private fun parsePilioText(pageText: String, out: MutableList<BingoDraw>) {
-        val pattern = Regex("[【〖]期別[:：]\\s*(\\d{7,12})[】〗]([\\s\\S]*?)(?:超級獎號|[【〖]期別|$)")
-        for (match in pattern.findAll(pageText)) {
-            val drawNo = match.groupValues[1]
-            val bodyWithoutTime = match.groupValues[2].replace(Regex("\\b\\d{1,2}:\\d{2}\\b"), " ")
-            val nums = Regex("\\b\\d{1,2}\\b").findAll(bodyWithoutTime)
+
+    private fun parseAuzoHistoricalDoc(doc: Document, out: MutableList<BingoDraw>) {
+        val periodPattern = Regex("\\b(1[1-9]\\d{7})\\b")
+        for (tr in doc.select("tr")) {
+            val rowText = tr.text()
+            val periodMatch = periodPattern.find(rowText) ?: continue
+            val drawNo = periodMatch.groupValues[1]
+            var remainder = rowText.substring(periodMatch.range.last + 1)
+            remainder = remainder
+                .replace(Regex("20\\d{2}[-/]\\d{1,2}[-/]\\d{1,2}"), " ")
+                .replace(Regex("\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b"), " ")
+            val numbers = Regex("\\b\\d{1,2}\\b").findAll(remainder)
                 .mapNotNull { it.value.toIntOrNull() }
                 .filter { it in 1..80 }
                 .distinct()
+                .take(20)
                 .toList()
-            if (nums.size == 20) {
-                out.add(BingoDraw(drawNo, "", nums))
-            }
-        }
-    }
-    private fun fetchFromAuzo(extraDays: Int): List<BingoDraw> {
-        val results = mutableListOf<BingoDraw>()
-        try {
-            val baseUrl = "https://lotto.auzo.tw/bingo/"
-            val doc = Jsoup.connect(baseUrl)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                .timeout(8000)
-                .get()
-            parseAuzoDoc(doc, results)
-            if (extraDays > 0) {
-                val dateLinks = mutableListOf<String>()
-                val dateRegex = Regex("^\\d{2}/\\d{2}$")
-                for (a in doc.select("a[href]")) {
-                    if (dateRegex.matches(a.text().trim())) {
-                        val absUrl = a.absUrl("href")
-                        if (absUrl.isNotEmpty() && absUrl !in dateLinks) {
-                            dateLinks.add(absUrl)
-                        }
-                    }
-                }
-                for (link in dateLinks.take(extraDays)) {
-                    try {
-                        val subDoc = Jsoup.connect(link)
-                            .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                            .timeout(8000)
-                            .get()
-                        parseAuzoDoc(subDoc, results)
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-        }
-        return results.distinctBy { it.drawNo }
-    }
-    private fun parseAuzoDoc(doc: Document, out: MutableList<BingoDraw>) {
-        for (tr in doc.select("tr")) {
-            if (tr.select("table").size > 0) continue
-            val text = tr.text()
-            val periodMatch = Regex("\\b(1[1-9]\\d{7})\\b").find(text) ?: continue
-            val drawNo = periodMatch.groupValues[1]
-            val afterPeriod = text.substring(periodMatch.range.last + 1)
-            val withoutTime = afterPeriod.replace(Regex("\\b\\d{1,2}:\\d{2}\\b"), " ")
-            val twoDigitNums = Regex("\\b\\d{2}\\b").findAll(withoutTime)
-                .mapNotNull { it.value.toIntOrNull() }
-                .filter { it in 1..80 }
-                .toList()
-            if (twoDigitNums.size >= 20) {
-                val nums = twoDigitNums.take(20).distinct()
-                if (nums.size == 20) {
-                    out.add(BingoDraw(drawNo, "", nums))
-                }
+            if (numbers.size == 20) {
+                out.add(BingoDraw(drawNo, "", numbers))
             }
         }
     }
