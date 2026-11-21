@@ -15,6 +15,12 @@ data class OptimizationResult(
     val bestTop10Hit: Double,
     val bestTop20Hit: Double,
     val oosHitRate: Double,
+    val originalOosTop5Hit: Double = 0.0,
+    val originalOosTop10Hit: Double = 0.0,
+    val originalOosTop20Hit: Double = 0.0,
+    val bestOosTop5Hit: Double = 0.0,
+    val bestOosTop10Hit: Double = 0.0,
+    val bestOosTop20Hit: Double = 0.0,
     val randomBaselineTop5: Double = 1.25,
     val randomBaselineTop10: Double = 2.50,
     val randomBaselineTop20: Double = 5.00
