@@ -25,13 +25,15 @@ object RecommendationEngine {
             lastNo = latest.drawNo
             lastActual = latest.numbers.sorted()
         }
-        val maxPeriods = minOf(50, history.size - 1)
+        val maxPeriods = minOf(200, history.size - 1)
         var sum5 = 0
         var sum10 = 0
         var sum20 = 0
         var metrics10 = HitRateRecommendation.HitMetrics(1.25, 2.50, 5.00, 0)
         var metrics30 = HitRateRecommendation.HitMetrics(1.25, 2.50, 5.00, 0)
         var metrics50 = HitRateRecommendation.HitMetrics(1.25, 2.50, 5.00, 0)
+        var metrics100 = HitRateRecommendation.HitMetrics(1.25, 2.50, 5.00, 0)
+        var metrics200 = HitRateRecommendation.HitMetrics(1.25, 2.50, 5.00, 0)
         if (maxPeriods > 0) {
             for (t in 0 until maxPeriods) {
                 val pastSlice = history.subList(t + 1, history.size)
@@ -58,7 +60,9 @@ object RecommendationEngine {
                 )
                 if (count <= 10) metrics10 = snapshot
                 if (count <= 30) metrics30 = snapshot
-                metrics50 = snapshot
+                if (count <= 50) metrics50 = snapshot
+                if (count <= 100) metrics100 = snapshot
+                metrics200 = snapshot
             }
         }
         return HitRateRecommendation(
@@ -72,7 +76,9 @@ object RecommendationEngine {
             lastDrawHitsTop20 = hit20,
             avgHitRate10 = metrics10,
             avgHitRate30 = metrics30,
-            avgHitRate50 = metrics50
+            avgHitRate50 = metrics50,
+            avgHitRate100 = metrics100,
+            avgHitRate200 = metrics200
         )
     }
 }
