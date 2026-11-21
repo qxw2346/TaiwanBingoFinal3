@@ -38,7 +38,7 @@ object RecommendationEngine {
             for (t in 0 until maxPeriods) {
                 val pastSlice = history.subList(t + 1, history.size)
                 val periodScores = BingoAnalyzerEngine.computeScores(pastSlice, weights)
-                val periodSorted = periodScores.entries.sortedByDescending { it.value }.map { it.key }
+                val periodSorted = periodScores.entries.sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key }).map { it.key }
                 val actual = history[t].numbers.toSet()
                 val periodHits5 = periodSorted.take(5).filter { it in actual }
                 val periodHits10 = periodSorted.take(10).filter { it in actual }
