@@ -36,8 +36,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val ANALYSIS_WINDOW_LIMIT = 1000
         private const val DB_RETENTION_CAP = 1200
-        private const val RECOMMENDED_MIN_SAMPLES = 100
-        private const val BACKFILL_THRESHOLD = 200
+        private const val RECOMMENDED_MIN_SAMPLES = 200
+        private const val BACKFILL_THRESHOLD = 1000
     }
     private lateinit var binding: ActivityMainBinding
     private lateinit var countdownManager: BingoCountdownManager
