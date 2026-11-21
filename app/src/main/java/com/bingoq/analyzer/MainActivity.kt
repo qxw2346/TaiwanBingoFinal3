@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private var currentWeights = WeightConfig.default()
     private var currentRecommendation: HitRateRecommendation? = null
     private var lastNetworkStatus: BingoDataFetcher.Status = BingoDataFetcher.Status.RED
+    private var lastSourceSummary: String = "資料來源：尚未取得"
     private var isUiEditingUnlocked: Boolean = false
     private var analysisJob: Job? = null
     private var optimizationJob: Job? = null
@@ -391,7 +392,7 @@ class MainActivity : AppCompatActivity() {
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
                 // Only settle a saved prediction when this sync returned non-RED source status.
-                if (networkStatus != BingoDataFetcher.Status.RED) {
+                if (lastNetworkStatus != BingoDataFetcher.Status.RED) {
                     PredictionAuditStore(applicationContext).settleAvailable(analysisDraws)
                 }
                 if (analysisDraws.isEmpty()) {
@@ -405,7 +406,7 @@ class MainActivity : AppCompatActivity() {
                 val recommendation = RecommendationEngine.generate(scores, analysisDraws, weightSnapshot)
                 withContext(Dispatchers.Main) {
                     decrementTask()
-                    updateAnalysisUI(scores, recommendation, analysisDraws.size, totalStoredCount, lastNetworkStatus, null)
+                    updateAnalysisUI(scores, recommendation, analysisDraws.size, totalStoredCount, lastNetworkStatus, null, lastSourceSummary)
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -447,6 +448,7 @@ class MainActivity : AppCompatActivity() {
                     sourceSummary = "資料來源：連線失敗；目前僅使用本機快取，不代表最新資料已核實"
                 }
                 lastNetworkStatus = networkStatus
+                lastSourceSummary = sourceSummary
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
                 if (analysisDraws.isEmpty()) {
