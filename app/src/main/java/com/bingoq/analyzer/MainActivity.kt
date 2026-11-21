@@ -510,13 +510,13 @@ class MainActivity : AppCompatActivity() {
                     top20 = recommendation.top20,
                     weights = currentWeights.copy(),
                     historyCount = windowSize,
-                    sourceStatus = networkStatus.name
+                    sourceStatus = networkStatus.name + " | " + sourceSummary
                 )
             }
         }
         updateAuditStatus()
         binding.tvSecurityBadge.text = when (networkStatus) {
-            BingoDataFetcher.Status.GREEN -> "● 多源一致"
+            BingoDataFetcher.Status.GREEN -> "● " + sourceSummary.lineSequence().count { it.contains("：一致") } + " 源一致"
             BingoDataFetcher.Status.YELLOW -> "▲ 尚未達雙源核實"
             BingoDataFetcher.Status.RED -> "✕ 離線/快取"
         }
