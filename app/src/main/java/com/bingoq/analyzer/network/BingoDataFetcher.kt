@@ -22,7 +22,8 @@ class BingoDataFetcher {
     }
     data class FetchResult(
         val status: Status,
-        val draws: List<BingoDraw>
+        val draws: List<BingoDraw>,
+        val sourceSummary: String = ""
     )
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -36,40 +37,54 @@ class BingoDataFetcher {
             val defOfficial = async { fetchFromTaiwanLotteryApi(daysToFetch) }
             val defPilio = async { fetchFromPilio(pilioExtraDays) }
             val defAuzo = async { fetchFromAuzo(auzoExtraDays) }
+            val defJyb = async { fetchFromJyb() }
+            val defTimetable = async { fetchFromTimetable() }
             val listOfficial = defOfficial.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
             val listPilio = defPilio.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
             val listAuzo = defAuzo.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
-            val primary = when {
-                listOfficial.isNotEmpty() -> listOfficial
-                listPilio.isNotEmpty() -> listPilio
-                else -> listAuzo
-            }
+            val listJyb = defJyb.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
+            val listTimetable = defTimetable.await().sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
+            val sources = listOf(
+                "台彩官方 API" to listOfficial,
+                "Pilio" to listPilio,
+                "Auzo" to listAuzo,
+                "JYB" to listJyb,
+                "賓果歷史查詢" to listTimetable
+            )
+            val primary = sources.firstOrNull { it.second.isNotEmpty() }?.second.orEmpty()
             if (primary.isEmpty()) {
-                return@coroutineScope FetchResult(Status.RED, emptyList())
+                return@coroutineScope FetchResult(Status.RED, emptyList(), "五個來源均未取得有效資料")
             }
             val recentDraws = primary.take(5)
             var verifiedGreen = false
             for (target in recentDraws) {
-                var matchCount = 0
-                if (listOfficial.any { it.drawNo == target.drawNo && it.numbers.toSet() == target.numbers.toSet() }) matchCount++
-                if (listPilio.any { it.drawNo == target.drawNo && it.numbers.toSet() == target.numbers.toSet() }) matchCount++
-                if (listAuzo.any { it.drawNo == target.drawNo && it.numbers.toSet() == target.numbers.toSet() }) matchCount++
-                val hasConflict = listOf(listOfficial, listPilio, listAuzo).any { src ->
-                    src.any { it.drawNo == target.drawNo && it.numbers.toSet() != target.numbers.toSet() }
+                val samePeriod = sources.mapNotNull { (name, rows) ->
+                    rows.firstOrNull { it.drawNo == target.drawNo }?.let { name to it }
                 }
-                if (hasConflict) {
-                    return@coroutineScope FetchResult(Status.RED, emptyList())
+                val matchingSources = samePeriod.filter { it.second.numbers.toSet() == target.numbers.toSet() }
+                val distinctResults = samePeriod.map { it.second.numbers.toSet() }.distinct()
+                if (distinctResults.size > 1 && samePeriod.size >= 2) {
+                    val conflict = samePeriod.joinToString("；") { pair ->
+                        pair.first + "=" + pair.second.numbers.sorted().joinToString(",")
+                    }
+                    return@coroutineScope FetchResult(Status.RED, emptyList(), "期號 " + target.drawNo + " 來源衝突：" + conflict)
                 }
-                if (matchCount >= 2) {
-                    verifiedGreen = true
-                }
+                if (matchingSources.size >= 2) verifiedGreen = true
             }
-            val merged = (listOfficial + listPilio + listAuzo)
+            val merged = sources.flatMap { it.second }
                 .distinctBy { it.drawNo }
                 .sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
                 .take(1000)
+            val newest = recentDraws.first()
+            val sourceSummary = sources.joinToString("\n") { pair ->
+                val name = pair.first
+                val rows = pair.second
+                val row = rows.firstOrNull { it.drawNo == newest.drawNo }
+                val mark = if (row == null) "未取得" else if (row.numbers.toSet() == newest.numbers.toSet()) "一致" else "不一致"
+                name + "：" + mark + "（" + rows.size + " 期；最新 " + (rows.firstOrNull()?.drawNo ?: "--") + "）"
+            }
             val status = if (verifiedGreen) Status.GREEN else Status.YELLOW
-            FetchResult(status, merged)
+            FetchResult(status, merged, sourceSummary)
         }
     }
     private fun fetchFromTaiwanLotteryApi(days: Int): List<BingoDraw> {
@@ -170,6 +185,45 @@ class BingoDataFetcher {
         }
         return emptyList()
     }
+    private fun fetchFromJyb(): List<BingoDraw> =
+        fetchHtmlDraws("https://jyb.one/", "JYB")
+
+    private fun fetchFromTimetable(): List<BingoDraw> =
+        fetchHtmlDraws("https://lottery.timetable.tw/bin-guo-bin-guo", "Timetable")
+
+    private fun fetchHtmlDraws(url: String, source: String): List<BingoDraw> {
+        return try {
+            val doc = Jsoup.connect(url)
+                .userAgent("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+                .timeout(12000)
+                .get()
+            val pageText = doc.body().text()
+            val marker = Regex("(?:期別\\s*[:：]?\\s*|No\\.\\s*)(\\d{9})")
+            val matches = marker.findAll(pageText).toList()
+            val results = mutableListOf<BingoDraw>()
+            for (i in matches.indices) {
+                val match = matches[i]
+                val end = if (i + 1 < matches.size) matches[i + 1].range.first else pageText.length
+                var block = pageText.substring(match.range.last + 1, end)
+                block = block.replace(Regex("20\\d{2}[-/]\\d{1,2}[-/]\\d{1,2}"), " ")
+                    .replace(Regex("\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b"), " ")
+                val numbers = Regex("\\b\\d{1,2}\\b").findAll(block)
+                    .mapNotNull { it.value.toIntOrNull() }
+                    .filter { it in 1..80 }
+                    .distinct()
+                    .take(20)
+                    .toList()
+                if (numbers.size == 20) {
+                    results.add(BingoDraw(match.groupValues[1], "", numbers))
+                }
+            }
+            results.distinctBy { it.drawNo }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            emptyList()
+        }
+    }
+
     private fun fetchFromPilio(extraDays: Int): List<BingoDraw> {
         val results = mutableListOf<BingoDraw>()
         try {
