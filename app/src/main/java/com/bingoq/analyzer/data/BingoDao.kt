@@ -15,7 +15,7 @@ interface BingoDao {
     @Query("SELECT COUNT(*) FROM bingo_draws")
     suspend fun getDrawCount(): Int
     @Query("DELETE FROM bingo_draws WHERE drawNo NOT IN (SELECT drawNo FROM bingo_draws ORDER BY CAST(drawNo AS INTEGER) DESC LIMIT :keepLimit)")
-    suspend fun pruneOldDraws(keepLimit: Int = 3000)
+    suspend fun pruneOldDraws(keepLimit: Int = 1200)
     @Query("DELETE FROM bingo_draws")
     suspend fun clearAll()
 }
