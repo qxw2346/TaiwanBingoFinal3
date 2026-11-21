@@ -13,7 +13,7 @@ class WeightManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("bingo_weights_pref_v333", Context.MODE_PRIVATE)
     companion object {
         private const val MAX_HISTORY_SNAPSHOTS = 5
-        const val MIN_DRAWS_FOR_OPTIMIZATION = 100
+        const val MIN_DRAWS_FOR_OPTIMIZATION = 300
     }
     fun getSavedWeights(): WeightConfig {
         val json = prefs.getString("saved_config_json", null)
@@ -88,11 +88,11 @@ class WeightManager(context: Context) {
                 oosHitRate = 0.0
             )
         }
-        val totalTestPeriods = minOf(60, history.size - 40)
-        // Reserve a larger, untouched recent holdout so weight search cannot tune against it.
-        // With 60 test periods this yields 30 train / 15 validation / 15 OOS periods.
-        val oosPeriods = minOf(15, maxOf(5, totalTestPeriods / 4))
-        val valPeriods = minOf(15, (totalTestPeriods - oosPeriods) / 3)
+        val totalTestPeriods = minOf(200, history.size - 40)
+        // Newest periods are the untouched OOS holdout (history is newest-first).
+        // At 200 test periods: 50 OOS / 50 validation / 100 training.
+        val oosPeriods = minOf(50, maxOf(15, totalTestPeriods / 4))
+        val valPeriods = minOf(50, (totalTestPeriods - oosPeriods) / 3)
         val trainPeriods = totalTestPeriods - oosPeriods - valPeriods
         val periodMatrices = Array(totalTestPeriods) { t ->
             BingoAnalyzerEngine.computeNormalizedFactorMatrix(history.subList(t + 1, history.size))
@@ -161,8 +161,10 @@ class WeightManager(context: Context) {
                 }
             }
         }
-        val origPerf = evaluateCached(baseConfig, 0, totalTestPeriods)
-        val bestPerf = evaluateCached(bestConfig, 0, totalTestPeriods)
+        // Report development periods separately from the untouched newest holdout.
+        val origPerf = evaluateCached(baseConfig, oosPeriods, totalTestPeriods)
+        val bestPerf = evaluateCached(bestConfig, oosPeriods, totalTestPeriods)
+        val originalOosPerf = evaluateCached(baseConfig, 0, oosPeriods)
         val oosPerf = evaluateCached(bestConfig, 0, oosPeriods)
         OptimizationResult(
             originalWeights = baseConfig,
@@ -179,7 +181,13 @@ class WeightManager(context: Context) {
             bestTop5Hit = bestPerf.first,
             bestTop10Hit = bestPerf.second,
             bestTop20Hit = bestPerf.third,
-            oosHitRate = oosPerf.third
+            oosHitRate = oosPerf.third,
+            originalOosTop5Hit = originalOosPerf.first,
+            originalOosTop10Hit = originalOosPerf.second,
+            originalOosTop20Hit = originalOosPerf.third,
+            bestOosTop5Hit = oosPerf.first,
+            bestOosTop10Hit = oosPerf.second,
+            bestOosTop20Hit = oosPerf.third
         )
     }
 }
