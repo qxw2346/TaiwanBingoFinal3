@@ -4,6 +4,7 @@ import com.bingoq.analyzer.model.WeightConfig
 import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.sqrt
+import kotlin.math.abs
 object BingoAnalyzerEngine {
     private const val TOTAL_BALLS = 80
     private const val EPSILON = 1e-9
@@ -236,24 +237,28 @@ object BingoAnalyzerEngine {
             rawMatrix[n][7] = if (anchorCount > 0) liftSum / anchorCount else 1.0
             rawMatrix[n][8] = zoneMomentum[(n - 1) / 20]
         }
+        // Robust percentile ranks replace min-max scaling: a single extreme value
+        // can no longer compress the other 79 numbers into nearly identical scores.
+        // Ties receive their average rank, preserving neutral treatment of equal values.
         for (f in 0 until 9) {
-            var minV = Double.MAX_VALUE
-            var maxV = -Double.MAX_VALUE
-            for (n in 1..TOTAL_BALLS) {
-                val v = rawMatrix[n][f]
-                if (!v.isNaN() && !v.isInfinite()) {
-                    if (v < minV) minV = v
-                    if (v > maxV) maxV = v
+            val ordered = (1..TOTAL_BALLS).sortedWith(
+                compareBy<Int> { rawMatrix[it][f] }.thenBy { it }
+            )
+            var start = 0
+            while (start < ordered.size) {
+                var end = start + 1
+                val tiedValue = rawMatrix[ordered[start]][f]
+                while (end < ordered.size &&
+                    abs(rawMatrix[ordered[end]][f] - tiedValue) <= EPSILON
+                ) {
+                    end++
                 }
-            }
-            val range = maxV - minV
-            for (n in 1..TOTAL_BALLS) {
-                val v = rawMatrix[n][f]
-                normMatrix[n][f] = if (v.isNaN() || v.isInfinite() || range <= EPSILON) {
-                    0.5
-                } else {
-                    ((v - minV) / range).coerceIn(0.0, 1.0)
+                val averageRank = (start + end - 1) / 2.0
+                val percentile = if (ordered.size <= 1) 0.5 else averageRank / (ordered.size - 1)
+                for (i in start until end) {
+                    normMatrix[ordered[i]][f] = percentile.coerceIn(0.0, 1.0)
                 }
+                start = end
             }
         }
         return normMatrix
