@@ -35,7 +35,7 @@ import java.util.Locale
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val ANALYSIS_WINDOW_LIMIT = 1000
-        private const val DB_RETENTION_CAP = 3000
+        private const val DB_RETENTION_CAP = 1200
         private const val RECOMMENDED_MIN_SAMPLES = 100
         private const val BACKFILL_THRESHOLD = 200
     }
@@ -530,7 +530,7 @@ class MainActivity : AppCompatActivity() {
             }
         )
         val sampleNotice = if (windowSize < RECOMMENDED_MIN_SAMPLES) " [樣本偏少]" else ""
-        binding.tvDrawStatus.text = "台彩賓果分析 (窗口: " + windowSize + "/1000期" + sampleNotice + " | 庫存: " + totalStoredCount + "/3000期)"
+        binding.tvDrawStatus.text = "台彩賓果分析 (窗口: " + windowSize + "/1000期" + sampleNotice + " | 循環保留: " + totalStoredCount + "/1200期)"
         if (syncErrorMsg != null) {
             Toast.makeText(this, syncErrorMsg, Toast.LENGTH_SHORT).show()
         }
