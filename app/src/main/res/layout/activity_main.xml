@@ -60,6 +60,15 @@
                                 android:textStyle="bold" />
 
                             <TextView
+                                android:id="@+id/tvSourceSummary"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="資料來源：同步檢查中"
+                                android:textColor="#8C8C8C"
+                                android:textSize="10sp" />
+
+                            <TextView
                                 android:id="@+id/tvCountdown"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
@@ -514,6 +523,16 @@
                                 android:text="複製號碼"
                                 android:textSize="11sp" />
                         </RelativeLayout>
+
+                        <TextView
+                            android:id="@+id/tvPredictionPeriod"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="預測目標期：等待資料同步"
+                            android:textColor="#FFD700"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
 
                         <TextView
                             android:id="@+id/tvTop5"
