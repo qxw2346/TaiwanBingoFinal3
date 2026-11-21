@@ -57,19 +57,30 @@ object BingoAnalyzerEngine {
                 }
             }
         }
-        if (totalDraws >= 10) {
-            val runningLastSeen = IntArray(TOTAL_BALLS + 1) { -1 }
-            val startOldest = minOf(totalDraws - 1, 500)
-            for (idx in startOldest downTo 0) {
-                val flags = drawFlags[idx]
-                for (n in 1..TOTAL_BALLS) {
-                    val prevIdx = runningLastSeen[n]
-                    if (prevIdx != -1) {
-                        val gap = (prevIdx - idx - 1).coerceIn(0, maxGapBucket)
-                        gapTrials[gap]++
-                        if (flags[n]) gapHits[gap]++
+        // Estimate P(hit next draw | current omission age) from prior walk-forward states.
+        // Skip each number's first left-censored streak because its true age is unknown.
+        // The former code counted only completed hit-to-hit gaps, making every trial a hit.
+        if (totalDraws >= 2) {
+            for (n in 1..TOTAL_BALLS) {
+                var hasPriorHit = false
+                var omissionAge = 0
+                for (idx in totalDraws - 1 downTo 0) {
+                    val hit = drawFlags[idx][n]
+                    if (!hasPriorHit) {
+                        if (hit) {
+                            hasPriorHit = true
+                            omissionAge = 0
+                        }
+                        continue
                     }
-                    if (flags[n]) runningLastSeen[n] = idx
+                    val bucket = omissionAge.coerceIn(0, maxGapBucket)
+                    gapTrials[bucket]++
+                    if (hit) {
+                        gapHits[bucket]++
+                        omissionAge = 0
+                    } else {
+                        omissionAge++
+                    }
                 }
             }
         }
