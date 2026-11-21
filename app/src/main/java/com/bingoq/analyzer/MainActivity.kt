@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.bingoq.analyzer.audit.PredictionAuditStore
 import com.bingoq.analyzer.algorithm.BingoAnalyzerEngine
 import com.bingoq.analyzer.algorithm.RecommendationEngine
 import com.bingoq.analyzer.data.BingoDatabase
@@ -313,6 +314,17 @@ class MainActivity : AppCompatActivity() {
         binding.btnRefreshAll.setOnClickListener {
             loadDataAndAnalyze()
         }
+        binding.btnExportAudit.setOnClickListener {
+            val store = PredictionAuditStore(applicationContext)
+            val journal = store.exportJsonLines()
+            if (journal.isBlank()) {
+                Toast.makeText(this, "目前尚無預測紀錄可匯出", Toast.LENGTH_SHORT).show()
+            } else {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("BingoPredictionAudit", journal))
+                Toast.makeText(this, "已複製完整稽核紀錄；請貼到文字檔另存備份", Toast.LENGTH_LONG).show()
+            }
+        }
         binding.btnCopyTop.setOnClickListener {
             currentRecommendation?.let { rec ->
                 val text = buildString {
@@ -374,6 +386,10 @@ class MainActivity : AppCompatActivity() {
                 val dao = BingoDatabase.getInstance(applicationContext).bingoDao()
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
+                // Only settle a saved prediction when this sync returned non-RED source status.
+                if (networkStatus != BingoDataFetcher.Status.RED) {
+                    PredictionAuditStore(applicationContext).settleAvailable(analysisDraws)
+                }
                 if (analysisDraws.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         decrementTask()
@@ -463,6 +479,26 @@ class MainActivity : AppCompatActivity() {
         syncErrorMsg: String?
     ) {
         currentRecommendation = recommendation
+        // Lock exactly one immutable prediction for the next sequential period.
+        // Refreshes or later weight edits cannot overwrite an existing target period.
+        if (networkStatus != BingoDataFetcher.Status.RED) {
+            val cutoff = recommendation.lastDrawNo
+            val target = cutoff.toLongOrNull()?.plus(1L)?.toString()
+            if (target != null) {
+                PredictionAuditStore(applicationContext).recordPrediction(
+                    targetPeriod = target,
+                    cutoffPeriod = cutoff,
+                    scores = scores,
+                    top5 = recommendation.top5,
+                    top10 = recommendation.top10,
+                    top20 = recommendation.top20,
+                    weights = currentWeights.copy(),
+                    historyCount = windowSize,
+                    sourceStatus = networkStatus.name
+                )
+            }
+        }
+        updateAuditStatus()
         binding.tvSecurityBadge.text = when (networkStatus) {
             BingoDataFetcher.Status.GREEN -> "● 三源核實"
             BingoDataFetcher.Status.YELLOW -> "▲ 單源核實"
@@ -492,6 +528,21 @@ class MainActivity : AppCompatActivity() {
         binding.tvTop20.text = "📋 Top 20 對標: " + recommendation.top20.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
         renderHeatmap(scores)
     }
+    private fun updateAuditStatus() {
+        val result = PredictionAuditStore(applicationContext).verify()
+        binding.tvAuditStatus.text = if (result.valid) {
+            "驗證：通過｜" + result.message + "\n預測紀錄：" + result.predictionCount +
+                " 期｜開獎結算：" + result.settlementCount +
+                " 期\n原始預測一經建立即鎖定；匯出 JSONL 可留存外部證據。"
+        } else {
+            "⚠️ 驗證失敗：" + result.message +
+                "\n已停止新增紀錄，請勿採信目前命中統計。"
+        }
+        binding.tvAuditStatus.setTextColor(
+            if (result.valid) Color.parseColor("#52C41A") else Color.parseColor("#FF4D4F")
+        )
+    }
+
     private fun renderHeatmap(scores: Map<Int, Double>) {
         binding.gridHeatmap.removeAllViews()
         val maxScore = scores.values.maxOrNull() ?: 1.0
