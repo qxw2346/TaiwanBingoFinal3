@@ -129,7 +129,18 @@ class WeightManager(context: Context) {
             WeightConfig(wA = 18, wB = 10, wC = 8, wD = 15, wE = 8, wF = 12, wG = 10, wH = 9, wI = 10, mode = "OPTIMIZED"),
             WeightConfig(wA = 8, wB = 12, wC = 8, wD = 6, wE = 12, wF = 8, wG = 20, wH = 18, wI = 8, mode = "OPTIMIZED"),
             WeightConfig(wA = 14, wB = 16, wC = 12, wD = 10, wE = 12, wF = 10, wG = 8, wH = 10, wI = 8, mode = "OPTIMIZED"),
-            WeightConfig(wA = 12, wB = 12, wC = 12, wD = 10, wE = 10, wF = 12, wG = 11, wH = 11, wI = 10, mode = "OPTIMIZED")
+            WeightConfig(wA = 12, wB = 12, wC = 12, wD = 10, wE = 10, wF = 12, wG = 11, wH = 11, wI = 10, mode = "OPTIMIZED"),
+            // One-factor ablations let the validation window reject features
+            // that add noise instead of forcing every feature to retain weight.
+            baseConfig.copy(wA = 0, mode = "OPTIMIZED"),
+            baseConfig.copy(wB = 0, mode = "OPTIMIZED"),
+            baseConfig.copy(wC = 0, mode = "OPTIMIZED"),
+            baseConfig.copy(wD = 0, mode = "OPTIMIZED"),
+            baseConfig.copy(wE = 0, mode = "OPTIMIZED"),
+            baseConfig.copy(wF = 0, mode = "OPTIMIZED"),
+            baseConfig.copy(wG = 0, mode = "OPTIMIZED"),
+            baseConfig.copy(wH = 0, mode = "OPTIMIZED"),
+            baseConfig.copy(wI = 0, mode = "OPTIMIZED")
         )
         var bestConfig = baseConfig
         var bestScore = compositeScore(baseConfig)
