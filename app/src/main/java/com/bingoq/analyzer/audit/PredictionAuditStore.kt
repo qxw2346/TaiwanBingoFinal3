@@ -69,22 +69,27 @@ class PredictionAuditStore(context: Context) {
     @Synchronized
     fun verify(): Verification {
         if (!file.exists() || file.length() == 0L) return Verification(true, 0, 0, 0, "尚無預測紀錄")
-        var previous = zeroHash; var events = 0; var predictions = 0; var settlements = 0
+        var previous = zeroHash
+        var events = 0
+        var predictions = 0
+        var settlements = 0
         return try {
-            file.forEachLine(Charsets.UTF_8) { line ->
-                if (line.isBlank()) return@forEachLine
+            for (line in file.readLines(Charsets.UTF_8)) {
+                if (line.isBlank()) continue
                 val envelope = JSONObject(line)
                 val prev = envelope.getString("previousHash")
                 val payloadText = envelope.getString("payload")
                 val hash = envelope.getString("hash")
-                if (prev != previous || sha256(previous + "\n" + payloadText) != hash)
+                if (prev != previous || sha256(previous + "\n" + payloadText) != hash) {
                     return Verification(false, events, predictions, settlements, "雜湊鏈驗證失敗：紀錄可能遭到修改或截斷")
+                }
                 when (JSONObject(payloadText).optString("type")) {
                     "PREDICTION" -> predictions++
                     "SETTLEMENT" -> settlements++
                     else -> return Verification(false, events, predictions, settlements, "發現未知紀錄類型")
                 }
-                previous = hash; events++
+                previous = hash
+                events++
             }
             Verification(true, events, predictions, settlements, "SHA-256 雜湊鏈完整")
         } catch (e: Exception) {
@@ -100,21 +105,30 @@ class PredictionAuditStore(context: Context) {
         return file.readLines(Charsets.UTF_8).filter { it.isNotBlank() }.map { JSONObject(JSONObject(it).getString("payload")) }
     }
 
-    private fun appendPayload(payload: JSONObject): Boolean = try {
-        if (!verify().valid) return false
-        val previous = if (file.exists() && file.length() > 0L)
-            JSONObject(file.readLines(Charsets.UTF_8).last { it.isNotBlank() }).getString("hash") else zeroHash
-        val payloadText = payload.toString()
-        val envelope = JSONObject().apply {
-            put("previousHash", previous); put("payload", payloadText)
-            put("hash", sha256(previous + "\n" + payloadText))
+    private fun appendPayload(payload: JSONObject): Boolean {
+        return try {
+            if (!verify().valid) {
+                false
+            } else {
+                val previous = if (file.exists() && file.length() > 0L)
+                    JSONObject(file.readLines(Charsets.UTF_8).last { it.isNotBlank() }).getString("hash") else zeroHash
+                val payloadText = payload.toString()
+                val envelope = JSONObject().apply {
+                    put("previousHash", previous)
+                    put("payload", payloadText)
+                    put("hash", sha256(previous + "\n" + payloadText))
+                }
+                file.parentFile?.mkdirs()
+                FileOutputStream(file, true).use { out ->
+                    out.write((envelope.toString() + "\n").toByteArray(Charsets.UTF_8))
+                    out.fd.sync()
+                }
+                true
+            }
+        } catch (_: Exception) {
+            false
         }
-        file.parentFile?.mkdirs()
-        FileOutputStream(file, true).use { out ->
-            out.write((envelope.toString() + "\n").toByteArray(Charsets.UTF_8)); out.fd.sync()
-        }
-        true
-    } catch (_: Exception) { false }
+    }
 
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
