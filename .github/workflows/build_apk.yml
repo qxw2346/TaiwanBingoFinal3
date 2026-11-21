@@ -6,6 +6,11 @@ on:
       - main
       - master
       - safety/in-place-upgrade-no-data-wipe
+      - optimization/hit-rate-v1
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
