@@ -39,4 +39,16 @@ class BingoAnalyzerTest {
         assertEquals(20, rec.top20.size)
         assertTrue(rec.avgHitRate30.periods in 1..30)
     }
+    @Test
+    fun testEqualScoresUseStableAscendingNumberTieBreak() {
+        val tiedScores = (1..80).associateWith { 0.5 }
+        val recommendation = RecommendationEngine.generate(
+            scores = tiedScores,
+            history = emptyList(),
+            weights = WeightConfig.default()
+        )
+        assertEquals((1..5).toList(), recommendation.top5)
+        assertEquals((1..10).toList(), recommendation.top10)
+        assertEquals((1..20).toList(), recommendation.top20)
+    }
 }
