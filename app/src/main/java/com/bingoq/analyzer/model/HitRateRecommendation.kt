@@ -10,7 +10,9 @@ data class HitRateRecommendation(
     val lastDrawHitsTop20: List<Int>,
     val avgHitRate10: HitMetrics,
     val avgHitRate30: HitMetrics,
-    val avgHitRate50: HitMetrics
+    val avgHitRate50: HitMetrics,
+    val avgHitRate100: HitMetrics,
+    val avgHitRate200: HitMetrics
 ) {
     data class HitMetrics(
         val top5Avg: Double,
