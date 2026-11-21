@@ -56,7 +56,7 @@ class BingoDataFetcher {
                 return@coroutineScope FetchResult(Status.RED, emptyList(), "五個來源均未取得有效資料")
             }
             val recentDraws = primary.take(5)
-            var verifiedGreen = false
+            var latestVerified = false
             for (target in recentDraws) {
                 val samePeriod = sources.mapNotNull { (name, rows) ->
                     rows.firstOrNull { it.drawNo == target.drawNo }?.let { name to it }
@@ -69,7 +69,7 @@ class BingoDataFetcher {
                     }
                     return@coroutineScope FetchResult(Status.RED, emptyList(), "期號 " + target.drawNo + " 來源衝突：" + conflict)
                 }
-                if (matchingSources.size >= 2) verifiedGreen = true
+                if (target.drawNo == recentDraws.first().drawNo) latestVerified = matchingSources.size >= 2
             }
             val merged = sources.flatMap { it.second }
                 .distinctBy { it.drawNo }
@@ -83,7 +83,7 @@ class BingoDataFetcher {
                 val mark = if (row == null) "未取得" else if (row.numbers.toSet() == newest.numbers.toSet()) "一致" else "不一致"
                 name + "：" + mark + "（" + rows.size + " 期；最新 " + (rows.firstOrNull()?.drawNo ?: "--") + "）"
             }
-            val status = if (verifiedGreen) Status.GREEN else Status.YELLOW
+            val status = if (latestVerified) Status.GREEN else Status.YELLOW
             FetchResult(status, merged, sourceSummary)
         }
     }
