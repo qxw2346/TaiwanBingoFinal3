@@ -237,7 +237,9 @@ object BingoAnalyzerEngine {
                     val pA = (coFreq[anchor] + 4.0 * 0.25) / (coDepth + 4.0)
                     val pNA = (coMatrix[n][anchor] + 4.0 * nullJointProbability) / (coDepth + 4.0)
                     // Correct the independence denominator for fixed-size sampling.
-                    val expectedJoint = pN * pA * (19.0 / 20.0)
+                    // For 20-of-80 sampling, P(A and B) / (P(A)P(B)) = 76/79.
+                    // Use the exact finite-population correction, consistent with nullJointProbability.
+                    val expectedJoint = pN * pA * (76.0 / 79.0)
                     val lift = pNA / (expectedJoint + EPSILON)
                     // Limit sparse-history extremes before cross-number ranking.
                     liftSum += lift.coerceIn(0.25, 4.0)
