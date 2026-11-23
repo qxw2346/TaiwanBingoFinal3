@@ -68,8 +68,8 @@ object StatisticalAuditEngine {
         for (t in 0 until periods) {
             val pastOnly = historyNewestFirst.subList(t + 1, historyNewestFirst.size)
             val scores = scoreUsingPastOnly(pastOnly)
-            require((1..80).all { scores[it]?.isFinite() == true }) {
-                "第 ${historyNewestFirst[t].drawNo} 期的模型分數缺少號碼或含有非有限值"
+            require(scores.keys == (1..80).toSet() && scores.values.all { it.isFinite() }) {
+                "第 ${historyNewestFirst[t].drawNo} 期的模型分數必須完整包含 01～80，且不得有非有限值"
             }
             val ranked = scores.entries
                 .sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key })
