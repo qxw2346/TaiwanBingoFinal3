@@ -21,7 +21,7 @@ object StatisticalAuditEngine {
         val randomStdPerDraw: Double,
         val meanCiLow: Double,
         val meanCiHigh: Double,
-        val lowHitRate: Double
+        val belowRandomBaselineRate: Double
     )
 
     data class Report(
@@ -107,7 +107,7 @@ object StatisticalAuditEngine {
             randomStdPerDraw = sqrt(randomVariance),
             meanCiLow = ci.first,
             meanCiHigh = ci.second,
-            lowHitRate = hits.count { it < 3 }.toDouble() / hits.size
+            belowRandomBaselineRate = hits.count { it < expected }.toDouble() / hits.size
         )
     }
 
