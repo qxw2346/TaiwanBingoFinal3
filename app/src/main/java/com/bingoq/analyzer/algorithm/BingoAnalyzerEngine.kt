@@ -12,6 +12,15 @@ object BingoAnalyzerEngine {
         val normMatrix = computeNormalizedFactorMatrix(history)
         return scoreFromFactorMatrix(normMatrix, weights)
     }
+    // Stable, period-specific tie-breaker: equal model scores must not systematically
+    // favor low-numbered balls. It uses only the known cutoff period and ball number.
+    fun tieBreakKey(cutoffPeriod: String, number: Int): Long {
+        var z = (cutoffPeriod.hashCode().toLong() shl 32) xor
+            (number.toLong() * -7046029254386353131L)
+        z = (z xor (z ushr 30)) * -4658895280553007687L
+        z = (z xor (z ushr 27)) * -7723592293110705685L
+        return z xor (z ushr 31)
+    }
     fun scoreFromFactorMatrix(normMatrix: Array<DoubleArray>, weights: WeightConfig): Map<Int, Double> {
         val finalMap = HashMap<Int, Double>(TOTAL_BALLS)
         val wNorm = weights.normalizedWeights()
