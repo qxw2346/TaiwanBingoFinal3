@@ -558,10 +558,19 @@ class MainActivity : AppCompatActivity() {
             "\n近" + m200.periods + "期歷史回溯平均: Top5[" + String.format(Locale.TAIWAN, "%.2f", m200.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", m200.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", m200.top20Avg) + "/5.00]" +
             "\nTop20 隨機基準 Z值: " + String.format(Locale.TAIWAN, "%.2f", z200) + "｜" + verdict +
             "\n※歷史回溯不代表未來命中；Z值為簡化隨機基準比較，期數相依及多重測試可能使其偏樂觀。"
-        val hitDesc = if (recommendation.lastDrawHitsTop20.isNotEmpty()) {
-            recommendation.lastDrawHitsTop20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) }
-        } else "無"
-        binding.tvLastHitDetail.text = "第 " + recommendation.lastDrawNo + " 期命中 Top20: " + recommendation.lastDrawHitsTop20.size + " 顆 [" + hitDesc + "]"
+        // This is a walk-forward backtest for the latest completed draw, NOT a hit
+        // on the upcoming prediction. RecommendationEngine trains only on draws
+        // strictly earlier than the draw being evaluated.
+        if (recommendation.avgHitRate200.periods > 0 && recommendation.lastDrawNo != "--") {
+            val hitDesc = if (recommendation.lastDrawHitsTop20.isNotEmpty()) {
+                recommendation.lastDrawHitsTop20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) }
+            } else "無"
+            binding.tvLastHitDetail.text =
+                "上一期歷史前向回測（非本期預測）｜第 " + recommendation.lastDrawNo +
+                " 期 Top20 命中 " + recommendation.lastDrawHitsTop20.size + " 顆 [" + hitDesc + "]"
+        } else {
+            binding.tvLastHitDetail.text = "上一期歷史前向回測：資料不足，尚未計算（不可視為命中）"
+        }
         binding.tvTop5.text = "🔥 Top 5 核心: " + recommendation.top5.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
         binding.tvTop10.text = "⚡ Top 10 黃金: " + recommendation.top10.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
         binding.tvTop20.text = "📋 Top 20 對標: " + recommendation.top20.joinToString(" , ") { String.format(Locale.TAIWAN, "%02d", it) }
