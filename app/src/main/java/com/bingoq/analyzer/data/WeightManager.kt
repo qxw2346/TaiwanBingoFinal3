@@ -181,7 +181,7 @@ class WeightManager(context: Context) {
         // Deterministic Dirichlet-style search explores the full 9-factor simplex.
         // The seed is tied to the latest verified draw so identical data gives identical weights.
         val seed = history.first().drawNo.hashCode().toLong() xor 0x6A09E667F3BCC909L
-        val rng = kotlin.random.Random(seed)
+        val rng = kotlin.random.Random(seed.toInt())
         repeat(512) {
             val raw = DoubleArray(9) {
                 -kotlin.math.ln(rng.nextDouble().coerceAtLeast(1e-12))
