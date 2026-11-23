@@ -338,7 +338,8 @@ class MainActivity : AppCompatActivity() {
                     appendLine("⚡ Top 10 黃金: " + rec.top10.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("📋 Top 20 對標: " + rec.top20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("近30期歷史回溯平均（非未來保證）: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top20Avg) + "/5.00]")
-                    append("近" + rec.avgHitRate200.periods + "期歷史回溯平均: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top20Avg) + "/5.00]；尚未證實預測優勢")
+                    appendLine("近" + rec.avgHitRate200.periods + "期歷史回溯平均: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top20Avg) + "/5.00]；尚未證實預測優勢")
+                    rec.auditTop20?.let { audit -> append("Top20區塊Bootstrap 95% CI: [" + String.format(Locale.TAIWAN, "%.3f", audit.meanCiLow) + ", " + String.format(Locale.TAIWAN, "%.3f", audit.meanCiHigh) + "]；低於隨機期望比例: " + String.format(Locale.TAIWAN, "%.1f%%", audit.belowRandomBaselineRate * 100.0)) }
                 }
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("BingoTopNumbers", text))
