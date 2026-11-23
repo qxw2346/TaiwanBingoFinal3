@@ -8,6 +8,7 @@ object RecommendationEngine {
         history: List<BingoDraw>,
         weights: WeightConfig
     ): HitRateRecommendation {
+        if (history.size >= 2) StatisticalAuditEngine.validateHistory(history)
         val sorted = scores.entries.sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key }).map { it.key }
         val pool = if (sorted.size >= 20) sorted else (1..80).toList()
         val top5 = pool.take(5).sorted()
