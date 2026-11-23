@@ -88,91 +88,141 @@ class WeightManager(context: Context) {
                 oosHitRate = 0.0
             )
         }
+        // Chronological split: newest OOS periods are never used to select weights.
         val totalTestPeriods = minOf(200, history.size - 40)
-        // Newest periods are the untouched OOS holdout (history is newest-first).
-        // At 200 test periods: 50 OOS / 50 validation / 100 training.
         val oosPeriods = minOf(50, maxOf(15, totalTestPeriods / 4))
         val valPeriods = minOf(50, (totalTestPeriods - oosPeriods) / 3)
         val trainPeriods = totalTestPeriods - oosPeriods - valPeriods
         val periodMatrices = Array(totalTestPeriods) { t ->
             BingoAnalyzerEngine.computeNormalizedFactorMatrix(history.subList(t + 1, history.size))
         }
-        val periodActuals = Array(totalTestPeriods) { t ->
-            history[t].numbers.toSet()
-        }
+        val periodActuals = Array(totalTestPeriods) { t -> history[t].numbers.toSet() }
+
         fun evaluateCached(weights: WeightConfig, startT: Int, endT: Int): Triple<Double, Double, Double> {
-            var h5 = 0; var h10 = 0; var h20 = 0
+            var h5 = 0
+            var h10 = 0
+            var h20 = 0
             val count = endT - startT
             if (count <= 0) return Triple(1.25, 2.50, 5.00)
             for (t in startT until endT) {
                 val scores = BingoAnalyzerEngine.scoreFromFactorMatrix(periodMatrices[t], weights)
-                val sorted = scores.entries.sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key }).map { it.key }
+                val cutoff = history[t + 1].drawNo
+                val ranked = scores.entries.sortedWith(
+                    compareByDescending<Map.Entry<Int, Double>> { it.value }
+                        .thenBy { BingoAnalyzerEngine.tieBreakKey(cutoff, it.key) }
+                ).map { it.key }
                 val actual = periodActuals[t]
-                h5 += sorted.take(5).count { it in actual }
-                h10 += sorted.take(10).count { it in actual }
-                h20 += sorted.take(20).count { it in actual }
+                h5 += ranked.take(5).count { it in actual }
+                h10 += ranked.take(10).count { it in actual }
+                h20 += ranked.take(20).count { it in actual }
             }
             return Triple(h5.toDouble() / count, h10.toDouble() / count, h20.toDouble() / count)
         }
+
+        // Top20 is the primary objective; Top10 and Top5 remain secondary objectives.
+        fun metric(res: Triple<Double, Double, Double>): Double =
+            res.third + 0.50 * res.second + 0.25 * res.first
+
         val trainStart = oosPeriods + valPeriods
         val trainEnd = totalTestPeriods
-        fun compositeScore(weights: WeightConfig): Double {
-            val trainRes = evaluateCached(weights, trainStart, trainEnd)
-            val valRes = evaluateCached(weights, oosPeriods, trainStart)
-            val trainComp = trainRes.first * 4.0 + trainRes.second * 2.0 + trainRes.third
-            val valComp = valRes.first * 4.0 + valRes.second * 2.0 + valRes.third
-            return trainComp * 0.4 + valComp * 0.6
+        val baseNorm = baseConfig.normalizedWeights()
+        fun regularization(weights: WeightConfig): Double {
+            val candidate = weights.normalizedWeights()
+            var l1 = 0.0
+            for (i in 0 until 9) l1 += kotlin.math.abs(candidate[i] - baseNorm[i])
+            return 0.05 * l1
         }
-        val seedCandidates = listOf(
-            baseConfig,
-            WeightConfig(wA = 10, wB = 22, wC = 14, wD = 6, wE = 10, wF = 8, wG = 12, wH = 10, wI = 8, mode = "OPTIMIZED"),
-            WeightConfig(wA = 18, wB = 10, wC = 8, wD = 15, wE = 8, wF = 12, wG = 10, wH = 9, wI = 10, mode = "OPTIMIZED"),
-            WeightConfig(wA = 8, wB = 12, wC = 8, wD = 6, wE = 12, wF = 8, wG = 20, wH = 18, wI = 8, mode = "OPTIMIZED"),
-            WeightConfig(wA = 14, wB = 16, wC = 12, wD = 10, wE = 12, wF = 10, wG = 8, wH = 10, wI = 8, mode = "OPTIMIZED"),
-            WeightConfig(wA = 12, wB = 12, wC = 12, wD = 10, wE = 10, wF = 12, wG = 11, wH = 11, wI = 10, mode = "OPTIMIZED"),
-            // One-factor ablations let the validation window reject features
-            // that add noise instead of forcing every feature to retain weight.
-            baseConfig.copy(wA = 0, mode = "OPTIMIZED"),
-            baseConfig.copy(wB = 0, mode = "OPTIMIZED"),
-            baseConfig.copy(wC = 0, mode = "OPTIMIZED"),
-            baseConfig.copy(wD = 0, mode = "OPTIMIZED"),
-            baseConfig.copy(wE = 0, mode = "OPTIMIZED"),
-            baseConfig.copy(wF = 0, mode = "OPTIMIZED"),
-            baseConfig.copy(wG = 0, mode = "OPTIMIZED"),
-            baseConfig.copy(wH = 0, mode = "OPTIMIZED"),
-            baseConfig.copy(wI = 0, mode = "OPTIMIZED")
-        )
+        fun objective(weights: WeightConfig): Double {
+            val train = evaluateCached(weights, trainStart, trainEnd)
+            val validation = evaluateCached(weights, oosPeriods, trainStart)
+            // Favor validation performance, retain some training signal, and penalize
+            // candidates whose Top20 result changes sharply between the two periods.
+            return 0.35 * metric(train) + 0.65 * metric(validation) -
+                0.15 * kotlin.math.abs(train.third - validation.third) -
+                regularization(weights)
+        }
+
+        fun fromRaw(values: DoubleArray): WeightConfig {
+            val sum = values.sum().coerceAtLeast(1e-12)
+            val exact = DoubleArray(9) { values[it] / sum * 100.0 }
+            val ints = IntArray(9) { exact[it].toInt() }
+            var remainder = 100 - ints.sum()
+            val order = (0 until 9).sortedByDescending { exact[it] - ints[it] }
+            var cursor = 0
+            while (remainder > 0) {
+                ints[order[cursor % 9]]++
+                remainder--
+                cursor++
+            }
+            return WeightConfig(
+                wA = ints[0], wB = ints[1], wC = ints[2], wD = ints[3],
+                wE = ints[4], wF = ints[5], wG = ints[6], wH = ints[7], wI = ints[8],
+                mode = "OPTIMIZED"
+            )
+        }
+
+        val candidates = LinkedHashMap<String, WeightConfig>()
+        fun addCandidate(candidate: WeightConfig) {
+            if (!candidate.isValid()) return
+            val key = listOf(candidate.wA, candidate.wB, candidate.wC, candidate.wD,
+                candidate.wE, candidate.wF, candidate.wG, candidate.wH, candidate.wI).joinToString(":")
+            candidates[key] = candidate.copy(mode = "OPTIMIZED")
+        }
+        addCandidate(baseConfig)
+        addCandidate(WeightConfig(11, 11, 11, 11, 11, 11, 11, 11, 12, mode = "OPTIMIZED"))
+        addCandidate(WeightConfig(10, 22, 14, 6, 10, 8, 12, 10, 8, mode = "OPTIMIZED"))
+        addCandidate(WeightConfig(18, 10, 8, 15, 8, 12, 10, 9, 10, mode = "OPTIMIZED"))
+        addCandidate(WeightConfig(8, 12, 8, 6, 12, 8, 20, 18, 8, mode = "OPTIMIZED"))
+        for (factor in 0 until 9) {
+            val values = DoubleArray(9) { if (it == factor) 0.0 else baseNorm[it] }
+            addCandidate(fromRaw(values))
+        }
+
+        // Deterministic Dirichlet-style search explores the full 9-factor simplex.
+        // The seed is tied to the latest verified draw so identical data gives identical weights.
+        val seed = history.first().drawNo.hashCode().toLong() xor 0x6A09E667F3BCC909L
+        val rng = kotlin.random.Random(seed)
+        repeat(512) {
+            val raw = DoubleArray(9) {
+                -kotlin.math.ln(rng.nextDouble().coerceAtLeast(1e-12))
+            }
+            addCandidate(fromRaw(raw))
+        }
+
         var bestConfig = baseConfig
-        var bestScore = compositeScore(baseConfig)
-        for (cand in seedCandidates) {
-            val s = compositeScore(cand)
-            if (s > bestScore) {
-                bestScore = s
-                bestConfig = cand
+        var bestScore = objective(baseConfig)
+        for (candidate in candidates.values) {
+            val score = objective(candidate)
+            if (score > bestScore + 1e-9) {
+                bestScore = score
+                bestConfig = candidate
             }
         }
-        val refinedList = mutableListOf<WeightConfig>()
-        for (delta in intArrayOf(-5, 6)) {
-            refinedList.add(bestConfig.copy(wA = (bestConfig.wA + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-            refinedList.add(bestConfig.copy(wB = (bestConfig.wB + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-            refinedList.add(bestConfig.copy(wC = (bestConfig.wC + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-            refinedList.add(bestConfig.copy(wD = (bestConfig.wD + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-            refinedList.add(bestConfig.copy(wE = (bestConfig.wE + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-            refinedList.add(bestConfig.copy(wF = (bestConfig.wF + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-            refinedList.add(bestConfig.copy(wG = (bestConfig.wG + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-            refinedList.add(bestConfig.copy(wH = (bestConfig.wH + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-            refinedList.add(bestConfig.copy(wI = (bestConfig.wI + delta).coerceIn(0, 100), mode = "OPTIMIZED"))
-        }
-        for (cand in refinedList) {
-            if (cand.isValid()) {
-                val s = compositeScore(cand)
-                if (s > bestScore) {
-                    bestScore = s
-                    bestConfig = cand
+
+        // Two small coordinate-refinement rounds around the best broad-search candidate.
+        repeat(2) { round ->
+            val delta = if (round == 0) 4 else 2
+            val local = mutableListOf<WeightConfig>()
+            val current = listOf(bestConfig.wA, bestConfig.wB, bestConfig.wC,
+                bestConfig.wD, bestConfig.wE, bestConfig.wF, bestConfig.wG,
+                bestConfig.wH, bestConfig.wI)
+            for (i in 0 until 9) {
+                for (change in listOf(-delta, delta)) {
+                    val values = current.map { it.toDouble() }.toDoubleArray()
+                    values[i] = (values[i] + change).coerceIn(0.0, 100.0)
+                    local.add(fromRaw(values))
+                }
+            }
+            for (candidate in local) {
+                val score = objective(candidate)
+                if (score > bestScore + 1e-9) {
+                    bestScore = score
+                    bestConfig = candidate
                 }
             }
         }
-        // Report development periods separately from the untouched newest holdout.
+
+        // OOS is evaluated only after the candidate has been selected.
         val origPerf = evaluateCached(baseConfig, oosPeriods, totalTestPeriods)
         val bestPerf = evaluateCached(bestConfig, oosPeriods, totalTestPeriods)
         val originalOosPerf = evaluateCached(baseConfig, 0, oosPeriods)
