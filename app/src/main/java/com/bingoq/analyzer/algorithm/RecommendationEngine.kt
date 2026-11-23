@@ -29,6 +29,9 @@ object RecommendationEngine {
         var sum5 = 0
         var sum10 = 0
         var sum20 = 0
+        val auditHits5 = mutableListOf<Int>()
+        val auditHits10 = mutableListOf<Int>()
+        val auditHits20 = mutableListOf<Int>()
         var metrics10 = HitRateRecommendation.HitMetrics(1.25, 2.50, 5.00, 0)
         var metrics30 = HitRateRecommendation.HitMetrics(1.25, 2.50, 5.00, 0)
         var metrics50 = HitRateRecommendation.HitMetrics(1.25, 2.50, 5.00, 0)
@@ -46,6 +49,9 @@ object RecommendationEngine {
                 sum5 += periodHits5.size
                 sum10 += periodHits10.size
                 sum20 += periodHits20.size
+                auditHits5 += periodHits5.size
+                auditHits10 += periodHits10.size
+                auditHits20 += periodHits20.size
                 if (t == 0) {
                     hit5 = periodHits5
                     hit10 = periodHits10
@@ -78,7 +84,10 @@ object RecommendationEngine {
             avgHitRate30 = metrics30,
             avgHitRate50 = metrics50,
             avgHitRate100 = metrics100,
-            avgHitRate200 = metrics200
+            avgHitRate200 = metrics200,
+            auditTop5 = auditHits5.takeIf { it.isNotEmpty() }?.let { StatisticalAuditEngine.summarize(5, it) },
+            auditTop10 = auditHits10.takeIf { it.isNotEmpty() }?.let { StatisticalAuditEngine.summarize(10, it) },
+            auditTop20 = auditHits20.takeIf { it.isNotEmpty() }?.let { StatisticalAuditEngine.summarize(20, it) }
         )
     }
 }
