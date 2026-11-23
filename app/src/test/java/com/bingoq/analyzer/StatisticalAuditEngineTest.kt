@@ -21,7 +21,7 @@ class StatisticalAuditEngineTest {
             (1..80).associateWith { 1.0 / it }
         }
         assertEquals(10, report.evaluatedPeriods)
-        assertEquals((15 downTo 6).toList(), seenSizes)
+        assertEquals((24 downTo 15).toList(), seenSizes)
         assertEquals(history[0].drawNo, report.targetNewestPeriod)
         assertEquals(history[10].drawNo, report.cutoffPeriod)
     }
