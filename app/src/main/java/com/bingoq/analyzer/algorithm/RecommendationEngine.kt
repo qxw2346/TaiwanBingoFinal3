@@ -8,7 +8,11 @@ object RecommendationEngine {
         history: List<BingoDraw>,
         weights: WeightConfig
     ): HitRateRecommendation {
-        val sorted = scores.entries.sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key }).map { it.key }
+        val currentCutoff = history.firstOrNull()?.drawNo ?: "--"
+        val sorted = scores.entries.sortedWith(
+            compareByDescending<Map.Entry<Int, Double>> { it.value }
+                .thenBy { BingoAnalyzerEngine.tieBreakKey(currentCutoff, it.key) }
+        ).map { it.key }
         val pool = if (sorted.size >= 20) sorted else (1..80).toList()
         val top5 = pool.take(5).sorted()
         val top10 = pool.take(10).sorted()
@@ -38,7 +42,11 @@ object RecommendationEngine {
             for (t in 0 until maxPeriods) {
                 val pastSlice = history.subList(t + 1, history.size)
                 val periodScores = BingoAnalyzerEngine.computeScores(pastSlice, weights)
-                val periodSorted = periodScores.entries.sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key }).map { it.key }
+                val cutoffPeriod = pastSlice.firstOrNull()?.drawNo ?: "--"
+                val periodSorted = periodScores.entries.sortedWith(
+                    compareByDescending<Map.Entry<Int, Double>> { it.value }
+                        .thenBy { BingoAnalyzerEngine.tieBreakKey(cutoffPeriod, it.key) }
+                ).map { it.key }
                 val actual = history[t].numbers.toSet()
                 val periodHits5 = periodSorted.take(5).filter { it in actual }
                 val periodHits10 = periodSorted.take(10).filter { it in actual }
