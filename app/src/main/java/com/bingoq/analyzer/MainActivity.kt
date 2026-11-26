@@ -398,10 +398,7 @@ class MainActivity : AppCompatActivity() {
                 val dao = BingoDatabase.getInstance(applicationContext).bingoDao()
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
-                // Only settle a saved prediction when this sync returned non-RED source status.
-                if (lastNetworkStatus != BingoDataFetcher.Status.RED) {
-                    PredictionAuditStore(applicationContext).settleAvailable(analysisDraws)
-                }
+                // Local cache data is not fresh cross-source evidence; never settle from cache.
                 if (analysisDraws.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         decrementTask()
@@ -438,10 +435,12 @@ class MainActivity : AppCompatActivity() {
                 var networkStatus = BingoDataFetcher.Status.RED
                 var syncErrorMsg: String? = null
                 var sourceSummary = "資料來源：尚未取得"
+                var verifiedDrawNos: Set<String> = emptySet()
                 try {
                     val result = fetcher.fetchAndVerify(fullBackfill = needBackfill)
                     networkStatus = result.status
                     sourceSummary = result.sourceSummary
+                    verifiedDrawNos = result.verifiedDrawNos
                     if (result.status != BingoDataFetcher.Status.RED && result.draws.isNotEmpty()) {
                         dao.insertDraws(result.draws)
                         dao.pruneOldDraws(DB_RETENTION_CAP)
@@ -458,6 +457,11 @@ class MainActivity : AppCompatActivity() {
                 lastSourceSummary = sourceSummary
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
+                if (verifiedDrawNos.isNotEmpty()) {
+                    PredictionAuditStore(applicationContext).settleAvailable(
+                        analysisDraws.filter { it.drawNo in verifiedDrawNos }
+                    )
+                }
                 if (analysisDraws.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         decrementTask()
@@ -503,12 +507,16 @@ class MainActivity : AppCompatActivity() {
         val cutoff = recommendation.lastDrawNo
         val target = cutoff.toLongOrNull()?.plus(1L)?.toString()
         binding.tvPredictionPeriod.text = if (target != null) {
-            "預測目標期：" + target + " 期｜參考截止：" + cutoff + " 期"
+            if (networkStatus == BingoDataFetcher.Status.GREEN) {
+                "預測目標期：" + target + " 期｜參考截止：" + cutoff + " 期"
+            } else {
+                "暫估目標期：" + target + " 期｜參考截止：" + cutoff + " 期（未雙源核實，不列入正式稽核）"
+            }
         } else {
             "預測目標期：無法由最新期號推算"
         }
         binding.tvSourceSummary.text = sourceSummary
-        if (networkStatus != BingoDataFetcher.Status.RED) {
+        if (networkStatus == BingoDataFetcher.Status.GREEN) {
             if (target != null) {
                 PredictionAuditStore(applicationContext).recordPrediction(
                     targetPeriod = target,
