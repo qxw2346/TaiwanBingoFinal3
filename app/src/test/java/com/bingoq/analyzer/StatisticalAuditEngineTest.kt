@@ -1,7 +1,9 @@
 package com.bingoq.analyzer
 
+import com.bingoq.analyzer.algorithm.RecommendationEngine
 import com.bingoq.analyzer.algorithm.StatisticalAuditEngine
 import com.bingoq.analyzer.model.BingoDraw
+import com.bingoq.analyzer.model.WeightConfig
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -62,5 +64,16 @@ class StatisticalAuditEngineTest {
         assertEquals(10, report.top10.k)
         assertEquals(20, report.top20.k)
         assertTrue(report.top20.meanCiLow <= report.top20.meanCiHigh)
+    }
+
+    @Test
+    fun recommendationsPreserveDescendingCompositeScoreOrder() {
+        val scores = (1..80).associateWith { it.toDouble() }
+        val history = listOf(BingoDraw("115000001", "2026-11-26", (1..20).toList()))
+        val result = RecommendationEngine.generate(scores, history, WeightConfig.default())
+
+        assertEquals((80 downTo 76).toList(), result.top5)
+        assertEquals((80 downTo 71).toList(), result.top10)
+        assertEquals((80 downTo 61).toList(), result.top20)
     }
 }
