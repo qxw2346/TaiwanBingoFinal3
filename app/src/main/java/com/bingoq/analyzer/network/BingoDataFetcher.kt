@@ -23,7 +23,8 @@ class BingoDataFetcher {
     data class FetchResult(
         val status: Status,
         val draws: List<BingoDraw>,
-        val sourceSummary: String = ""
+        val sourceSummary: String = "",
+        val verifiedDrawNos: Set<String> = emptySet()
     )
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -51,27 +52,33 @@ class BingoDataFetcher {
             if (primary.isEmpty()) {
                 return@coroutineScope FetchResult(Status.RED, emptyList(), "三個保留來源均未取得有效資料")
             }
-            val recentDraws = primary.take(5)
-            var latestVerified = false
-            for (target in recentDraws) {
+            // Validate every overlapping period, not only the newest five.
+            // Only two independent providers agreeing on all 20 numbers can authorize settlement.
+            val verifiedDrawNos = primary.mapNotNull { target ->
                 val samePeriod = sources.mapNotNull { (name, rows) ->
                     rows.firstOrNull { it.drawNo == target.drawNo }?.let { name to it }
                 }
-                val matchingSources = samePeriod.filter { it.second.numbers.toSet() == target.numbers.toSet() }
                 val distinctResults = samePeriod.map { it.second.numbers.toSet() }.distinct()
-                if (distinctResults.size > 1 && samePeriod.size >= 2) {
+                if (samePeriod.size >= 2 && distinctResults.size > 1) {
                     val conflict = samePeriod.joinToString("；") { pair ->
                         pair.first + "=" + pair.second.numbers.sorted().joinToString(",")
                     }
-                    return@coroutineScope FetchResult(Status.RED, emptyList(), "期號 " + target.drawNo + " 來源衝突：" + conflict)
+                    return@coroutineScope FetchResult(
+                        Status.RED, emptyList(),
+                        "期號 " + target.drawNo + " 來源衝突：" + conflict
+                    )
                 }
-                if (target.drawNo == recentDraws.first().drawNo) latestVerified = matchingSources.size >= 2
-            }
+                val matchingSources = samePeriod.count {
+                    it.second.numbers.toSet() == target.numbers.toSet()
+                }
+                target.drawNo.takeIf { matchingSources >= 2 }
+            }.toSet()
+            val newest = primary.first()
+            val latestVerified = newest.drawNo in verifiedDrawNos
             val merged = sources.flatMap { it.second }
                 .distinctBy { it.drawNo }
                 .sortedByDescending { it.drawNo.toLongOrNull() ?: 0L }
                 .take(1000)
-            val newest = recentDraws.first()
             val sourceSummary = sources.joinToString("\n") { pair ->
                 val name = pair.first
                 val rows = pair.second
@@ -80,7 +87,7 @@ class BingoDataFetcher {
                 name + "：" + mark + "（" + rows.size + " 期；最新 " + (rows.firstOrNull()?.drawNo ?: "--") + "）"
             }
             val status = if (latestVerified) Status.GREEN else Status.YELLOW
-            FetchResult(status, merged, sourceSummary)
+            FetchResult(status, merged, sourceSummary, verifiedDrawNos)
         }
     }
     private fun fetchFromTaiwanLotteryApi(days: Int): List<BingoDraw> {
