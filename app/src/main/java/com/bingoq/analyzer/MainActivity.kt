@@ -398,7 +398,7 @@ class MainActivity : AppCompatActivity() {
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
                 // Only settle a saved prediction when this sync returned non-RED source status.
-                if (lastNetworkStatus != BingoDataFetcher.Status.RED) {
+                if (lastNetworkStatus == BingoDataFetcher.Status.GREEN) {
                     PredictionAuditStore(applicationContext).settleAvailable(analysisDraws)
                 }
                 if (analysisDraws.isEmpty()) {
@@ -457,6 +457,14 @@ class MainActivity : AppCompatActivity() {
                 lastSourceSummary = sourceSummary
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
+                // Settle predictions immediately after a successful, cross-verified sync.
+                // RED/YELLOW data must never be used to finalize an immutable audit result.
+                if (networkStatus == BingoDataFetcher.Status.GREEN) {
+                    val settledCount = PredictionAuditStore(applicationContext).settleAvailable(analysisDraws)
+                    if (settledCount > 0) {
+                        android.util.Log.i("BingoAudit", "Settled $settledCount prediction(s) after verified sync")
+                    }
+                }
                 if (analysisDraws.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         decrementTask()
