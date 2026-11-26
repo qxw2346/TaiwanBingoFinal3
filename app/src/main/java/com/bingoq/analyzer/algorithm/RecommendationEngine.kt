@@ -1,4 +1,4 @@
-﻿package com.bingoq.analyzer.algorithm
+package com.bingoq.analyzer.algorithm
 import com.bingoq.analyzer.model.BingoDraw
 import com.bingoq.analyzer.model.HitRateRecommendation
 import com.bingoq.analyzer.model.WeightConfig
@@ -11,9 +11,11 @@ object RecommendationEngine {
         if (history.size >= 2) StatisticalAuditEngine.validateHistory(history)
         val sorted = scores.entries.sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key }).map { it.key }
         val pool = if (sorted.size >= 20) sorted else (1..80).toList()
-        val top5 = pool.take(5).sorted()
-        val top10 = pool.take(10).sorted()
-        val top20 = pool.take(20).sorted()
+        // Preserve composite-score rank order. Sorting each selected set numerically
+        // hides the ranking and makes the displayed first number look arbitrary.
+        val top5 = pool.take(5)
+        val top10 = pool.take(10)
+        val top20 = pool.take(20)
         var lastNo = "--"
         var lastActual = emptyList<Int>()
         // These hit lists must come from a prediction made BEFORE the target draw.
