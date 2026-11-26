@@ -31,7 +31,10 @@ class BingoDataFetcher {
         .build()
     suspend fun fetchAndVerify(fullBackfill: Boolean = false): FetchResult = withContext(Dispatchers.IO) {
         coroutineScope {
-            val daysToFetch = if (fullBackfill) 5 else 1
+            // Keep yesterday's draws in the normal sync window as well. Otherwise,
+            // a prediction made near midnight can never be settled on the next day:
+            // the current-day-only fetch omits its target draw permanently.
+            val daysToFetch = if (fullBackfill) 5 else 2
             val defOfficial = async { fetchFromTaiwanLotteryApi(daysToFetch) }
             val defAuzo = async { fetchFromAuzo(daysToFetch) }
             val defTimetable = async { fetchFromTimetable() }
