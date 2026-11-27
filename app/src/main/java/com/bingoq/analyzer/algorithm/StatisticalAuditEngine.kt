@@ -71,8 +71,12 @@ object StatisticalAuditEngine {
             require(scores.keys == (1..80).toSet() && scores.values.all { it.isFinite() }) {
                 "第 ${historyNewestFirst[t].drawNo} 期的模型分數必須完整包含 01～80，且不得有非有限值"
             }
+            val cutoffPeriod = pastOnly.firstOrNull()?.drawNo ?: "--"
             val ranked = scores.entries
-                .sortedWith(compareByDescending<Map.Entry<Int, Double>> { it.value }.thenBy { it.key })
+                .sortedWith(
+                    compareByDescending<Map.Entry<Int, Double>> { it.value }
+                        .thenBy { BingoAnalyzerEngine.tieBreakKey(cutoffPeriod, it.key) }
+                )
                 .map { it.key }
             val actual = historyNewestFirst[t].numbers.toHashSet()
             hits5 += ranked.take(5).count { it in actual }
