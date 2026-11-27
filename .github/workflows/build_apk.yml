@@ -7,6 +7,7 @@ on:
       - master
       - safety/in-place-upgrade-no-data-wipe
       - optimization/hit-rate-v1
+      - upgrade/full-quant-audit-20261123
   pull_request:
     branches:
       - main

@@ -8,6 +8,14 @@ import kotlin.math.abs
 object BingoAnalyzerEngine {
     private const val TOTAL_BALLS = 80
     private const val EPSILON = 1e-9
+    // Deterministic period-specific tie-breaker; no systematic low-number preference.
+    fun tieBreakKey(cutoffPeriod: String, number: Int): Long {
+        var z = (cutoffPeriod.hashCode().toLong() shl 32) xor
+            (number.toLong() * -7046029254386353131L)
+        z = (z xor (z ushr 30)) * -4658895280553007687L
+        z = (z xor (z ushr 27)) * -7723592293110705685L
+        return z xor (z ushr 31)
+    }
     fun computeScores(history: List<BingoDraw>, weights: WeightConfig): Map<Int, Double> {
         val normMatrix = computeNormalizedFactorMatrix(history)
         return scoreFromFactorMatrix(normMatrix, weights)

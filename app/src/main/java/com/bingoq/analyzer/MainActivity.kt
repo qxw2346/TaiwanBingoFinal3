@@ -338,7 +338,8 @@ class MainActivity : AppCompatActivity() {
                     appendLine("⚡ Top 10 黃金: " + rec.top10.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("📋 Top 20 對標: " + rec.top20.joinToString(", ") { String.format(Locale.TAIWAN, "%02d", it) })
                     appendLine("近30期歷史回溯平均（非未來保證）: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate30.top20Avg) + "/5.00]")
-                    append("近" + rec.avgHitRate200.periods + "期歷史回溯平均: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top20Avg) + "/5.00]；尚未證實預測優勢")
+                    appendLine("近" + rec.avgHitRate200.periods + "期歷史回溯平均: Top5[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top5Avg) + "/1.25] Top10[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top10Avg) + "/2.50] Top20[" + String.format(Locale.TAIWAN, "%.2f", rec.avgHitRate200.top20Avg) + "/5.00]；尚未證實預測優勢")
+                    rec.auditTop20?.let { audit -> append("Top20區塊Bootstrap 95% CI: [" + String.format(Locale.TAIWAN, "%.3f", audit.meanCiLow) + ", " + String.format(Locale.TAIWAN, "%.3f", audit.meanCiHigh) + "]；低於隨機期望比例: " + String.format(Locale.TAIWAN, "%.1f%%", audit.belowRandomBaselineRate * 100.0)) }
                 }
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("BingoTopNumbers", text))
@@ -397,10 +398,7 @@ class MainActivity : AppCompatActivity() {
                 val dao = BingoDatabase.getInstance(applicationContext).bingoDao()
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
-                // Only settle a saved prediction when this sync returned non-RED source status.
-                if (lastNetworkStatus != BingoDataFetcher.Status.RED) {
-                    PredictionAuditStore(applicationContext).settleAvailable(analysisDraws)
-                }
+                // Local cache data is not fresh cross-source evidence; never settle from cache.
                 if (analysisDraws.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         decrementTask()
@@ -437,10 +435,12 @@ class MainActivity : AppCompatActivity() {
                 var networkStatus = BingoDataFetcher.Status.RED
                 var syncErrorMsg: String? = null
                 var sourceSummary = "資料來源：尚未取得"
+                var verifiedDrawNos: Set<String> = emptySet()
                 try {
                     val result = fetcher.fetchAndVerify(fullBackfill = needBackfill)
                     networkStatus = result.status
                     sourceSummary = result.sourceSummary
+                    verifiedDrawNos = result.verifiedDrawNos
                     if (result.status != BingoDataFetcher.Status.RED && result.draws.isNotEmpty()) {
                         dao.insertDraws(result.draws)
                         dao.pruneOldDraws(DB_RETENTION_CAP)
@@ -457,6 +457,11 @@ class MainActivity : AppCompatActivity() {
                 lastSourceSummary = sourceSummary
                 val analysisDraws = dao.getRecentDraws(ANALYSIS_WINDOW_LIMIT)
                 val totalStoredCount = dao.getDrawCount()
+                if (verifiedDrawNos.isNotEmpty()) {
+                    PredictionAuditStore(applicationContext).settleAvailable(
+                        analysisDraws.filter { it.drawNo in verifiedDrawNos }
+                    )
+                }
                 if (analysisDraws.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         decrementTask()
@@ -502,12 +507,16 @@ class MainActivity : AppCompatActivity() {
         val cutoff = recommendation.lastDrawNo
         val target = cutoff.toLongOrNull()?.plus(1L)?.toString()
         binding.tvPredictionPeriod.text = if (target != null) {
-            "預測目標期：" + target + " 期｜參考截止：" + cutoff + " 期"
+            if (networkStatus == BingoDataFetcher.Status.GREEN) {
+                "預測目標期：" + target + " 期｜參考截止：" + cutoff + " 期"
+            } else {
+                "暫估目標期：" + target + " 期｜參考截止：" + cutoff + " 期（未雙源核實，不列入正式稽核）"
+            }
         } else {
             "預測目標期：無法由最新期號推算"
         }
         binding.tvSourceSummary.text = sourceSummary
-        if (networkStatus != BingoDataFetcher.Status.RED) {
+        if (networkStatus == BingoDataFetcher.Status.GREEN) {
             if (target != null) {
                 PredictionAuditStore(applicationContext).recordPrediction(
                     targetPeriod = target,

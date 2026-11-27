@@ -12,7 +12,10 @@ data class HitRateRecommendation(
     val avgHitRate30: HitMetrics,
     val avgHitRate50: HitMetrics,
     val avgHitRate100: HitMetrics,
-    val avgHitRate200: HitMetrics
+    val avgHitRate200: HitMetrics,
+    val auditTop5: com.bingoq.analyzer.algorithm.StatisticalAuditEngine.Metric? = null,
+    val auditTop10: com.bingoq.analyzer.algorithm.StatisticalAuditEngine.Metric? = null,
+    val auditTop20: com.bingoq.analyzer.algorithm.StatisticalAuditEngine.Metric? = null
 ) {
     data class HitMetrics(
         val top5Avg: Double,

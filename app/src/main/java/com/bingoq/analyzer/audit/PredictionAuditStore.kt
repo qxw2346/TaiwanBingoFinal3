@@ -55,7 +55,13 @@ class PredictionAuditStore(context: Context) {
             val event = JSONObject().apply {
                 put("type", "SETTLEMENT"); put("schemaVersion", 1); put("targetPeriod", target)
                 put("cutoffPeriod", p.optString("cutoffPeriod")); put("settledAtEpochMs", System.currentTimeMillis())
-                put("actualNumbers", JSONArray(actual.numbers.sorted())); put("actualDrawTime", actual.drawTime)
+                put("actualNumbers", JSONArray(actual.numbers.sorted()))
+                // Some fallback providers omit timestamps. Never serialize an empty or
+                // year-one sentinel as if it were a real draw timestamp.
+                val actualTime = actual.drawTime.trim()
+                put("actualDrawTime", actualTime.takeUnless {
+                    it.isBlank() || it.startsWith("0001-01-01")
+                } ?: "")
                 put("top5Hits", JSONArray(top5.filter { it in actualSet }))
                 put("top10Hits", JSONArray(top10.filter { it in actualSet }))
                 put("top20Hits", JSONArray(top20.filter { it in actualSet }))
