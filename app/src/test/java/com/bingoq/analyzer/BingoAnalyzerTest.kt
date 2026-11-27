@@ -65,15 +65,16 @@ class BingoAnalyzerTest {
         }
     }
     @Test
-    fun testEqualScoresUseStableAscendingNumberTieBreak() {
+    fun testEqualScoresUseStablePeriodSpecificTieBreak() {
         val tiedScores = (1..80).associateWith { 0.5 }
+        val expected = (1..80).sortedBy { BingoAnalyzerEngine.tieBreakKey("--", it) }
         val recommendation = RecommendationEngine.generate(
             scores = tiedScores,
             history = emptyList(),
             weights = WeightConfig.default()
         )
-        assertEquals((1..5).toList(), recommendation.top5)
-        assertEquals((1..10).toList(), recommendation.top10)
-        assertEquals((1..20).toList(), recommendation.top20)
+        assertEquals(expected.take(5), recommendation.top5)
+        assertEquals(expected.take(10), recommendation.top10)
+        assertEquals(expected.take(20), recommendation.top20)
     }
 }
